@@ -186,6 +186,7 @@ launchctl kickstart -k gui/$(id -u)/com.user.mcpmanager
 | `DEFAULT_CMD_TIMEOUT` | `300` | Default command timeout in seconds |
 | `MAX_CMD_TIMEOUT` | `1800` | Maximum accepted command timeout |
 | `MAX_READ_BYTES` | `5000000` | Maximum file size read by `read_file` |
+| `MAX_WRITE_BYTES` | `5000000` | Maximum content size written by `write_file` |
 | `LOG_LEVEL` | `INFO` | Python log level |
 | `ALLOW_INSECURE_NO_AUTH` | `false` | Explicit local-development authentication bypass |
 
