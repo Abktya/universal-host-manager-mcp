@@ -1,0 +1,2 @@
+fastmcp>=2.13,<5
+python-dotenv>=1.0,<2
