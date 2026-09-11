@@ -1,0 +1,22 @@
+[Unit]
+Description=Universal Host Manager MCP Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=youruser
+Group=youruser
+WorkingDirectory=/opt/universal-host-manager-mcp
+EnvironmentFile=/opt/universal-host-manager-mcp/.env
+ExecStart=/opt/universal-host-manager-mcp/.venv/bin/python /opt/universal-host-manager-mcp/server.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/youruser/workspace
+
+[Install]
+WantedBy=multi-user.target
