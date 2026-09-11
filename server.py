@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import platform
+import signal
 import subprocess
 from functools import wraps
 from pathlib import Path
@@ -37,6 +38,7 @@ MAX_OUTPUT_CHARS = int(os.getenv("MAX_OUTPUT_CHARS", "64000"))
 DEFAULT_CMD_TIMEOUT = int(os.getenv("DEFAULT_CMD_TIMEOUT", "300"))
 MAX_CMD_TIMEOUT = int(os.getenv("MAX_CMD_TIMEOUT", "1800"))
 MAX_READ_BYTES = int(os.getenv("MAX_READ_BYTES", "5000000"))
+MAX_WRITE_BYTES = int(os.getenv("MAX_WRITE_BYTES", "5000000"))
 ALLOW_INSECURE_NO_AUTH = os.getenv("ALLOW_INSECURE_NO_AUTH", "false").lower() in {
     "1", "true", "yes",
 }
@@ -102,35 +104,49 @@ def _validate_path(target_path: str) -> Path:
 
 
 def _run(command: str, timeout: int = DEFAULT_CMD_TIMEOUT) -> str:
+    """Run ``command`` in a shell, killing the whole process group on timeout.
+
+    ``subprocess.run(..., shell=True)`` only terminates the immediate shell
+    process on timeout; any children it spawned (background jobs, piped
+    processes, ``nohup``'d commands, etc.) are left running. Starting the
+    shell in its own session (``start_new_session=True``) lets us send the
+    kill signal to the whole process group via ``os.killpg`` instead.
+    """
     timeout = max(1, min(timeout, MAX_CMD_TIMEOUT))
+    process = subprocess.Popen(
+        command,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=WORKSPACE_ROOT,
+        errors="replace",
+        start_new_session=True,  # own process group -> can kill children too
+    )
     try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=WORKSPACE_ROOT,
-            errors="replace",
-        )
-    except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout or ""
-        stderr = exc.stderr or ""
-        if isinstance(stdout, bytes):
-            stdout = stdout.decode(errors="replace")
-        if isinstance(stderr, bytes):
-            stderr = stderr.decode(errors="replace")
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        stdout, stderr = process.communicate()
         return _truncate(
-            f"[ERROR] Command timed out after {timeout}s\n"
+            f"[ERROR] Command timed out after {timeout}s and was killed "
+            f"(including any child processes)\n"
             f"--- partial output ---\n{(stdout + stderr).strip() or '(none)'}"
         )
     except Exception as exc:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
         logger.exception("Command execution failed")
         return f"[ERROR] Execution failed: {type(exc).__name__}: {exc}"
 
-    output = (result.stdout + result.stderr).strip() or "(no output)"
-    if result.returncode:
-        output = f"[exit={result.returncode}]\n{output}"
+    output = (stdout + stderr).strip() or "(no output)"
+    if process.returncode:
+        output = f"[exit={process.returncode}]\n{output}"
     return _truncate(output)
 
 
@@ -183,10 +199,13 @@ def read_file(path: str) -> str:
 @safe_tool
 def write_file(path: str, content: str) -> str:
     """Write UTF-8 text inside the configured workspace."""
+    encoded = content.encode("utf-8")
+    if len(encoded) > MAX_WRITE_BYTES:
+        return f"[ERROR] Content exceeds MAX_WRITE_BYTES ({MAX_WRITE_BYTES})."
     target = _validate_path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
-    return f"Wrote {len(content)} characters to {target}"
+    return f"Wrote {len(encoded)} bytes to {target}"
 
 
 @mcp.tool()
