@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.mcpmanager</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/path/to/universal-host-manager-mcp/.venv/bin/python</string>
+        <string>/path/to/universal-host-manager-mcp/server.py</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/path/to/universal-host-manager-mcp</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/tmp/universal-host-manager-mcp.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/universal-host-manager-mcp.error.log</string>
+    <key>KeepAlive</key>
+    <true/>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
