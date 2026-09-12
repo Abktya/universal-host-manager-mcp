@@ -1,0 +1,68 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.github.Abktya/universal-host-manager-mcp",
+  "description": "Cross-platform FastMCP server for authenticated remote Linux/macOS host administration",
+  "status": "active",
+  "repository": {
+    "url": "https://github.com/Abktya/universal-host-manager-mcp",
+    "source": "github",
+    "id": "1366574690"
+  },
+  "version": "0.1.1",
+  "packages": [
+    {
+      "registry_type": "pypi",
+      "registry_base_url": "https://pypi.org",
+      "identifier": "universal-host-manager-mcp",
+      "version": "0.1.1",
+      "runtime_hint": "uvx",
+      "transport": {
+        "type": "streamable-http",
+        "url": "http://{HOST}:{PORT}/mcp"
+      },
+      "environment_variables": [
+        {
+          "name": "HOST",
+          "description": "Interface to bind to",
+          "default": "127.0.0.1"
+        },
+        {
+          "name": "PORT",
+          "description": "Port to listen on",
+          "default": "8765"
+        },
+        {
+          "name": "MCP_WORKSPACE_DIR",
+          "description": "Directory that read_file/write_file/list_dir are restricted to",
+          "is_required": true
+        },
+        {
+          "name": "AUTH0_DOMAIN",
+          "description": "Auth0 tenant domain, e.g. your-tenant.eu.auth0.com",
+          "is_required": true
+        },
+        {
+          "name": "AUTH0_CLIENT_ID",
+          "description": "Auth0 application client ID",
+          "is_required": true
+        },
+        {
+          "name": "AUTH0_CLIENT_SECRET",
+          "description": "Auth0 application client secret",
+          "is_required": true,
+          "is_secret": true
+        },
+        {
+          "name": "AUTH0_AUDIENCE",
+          "description": "Auth0 API audience/identifier",
+          "is_required": true
+        },
+        {
+          "name": "ALLOW_INSECURE_NO_AUTH",
+          "description": "Set to true only for local-only testing without Auth0",
+          "default": "false"
+        }
+      ]
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 # Universal Host Manager MCP
+<!-- mcp-name: io.github.Abktya/universal-host-manager-mcp -->
 
 A cross-platform [Model Context Protocol](https://modelcontextprotocol.io/) server for administering a Linux or macOS host through MCP clients such as ChatGPT and Claude.
 
