@@ -169,7 +169,7 @@ These steps deploy the server on an EC2 instance and expose it safely to remote 
 
 ### 1. Launch the instance
 
-- AMI: Ubuntu 24.04 LTS (or Amazon Linux 2023)
+- AMI: Ubuntu 24.04 LTS (the commands below are for Ubuntu/`apt`; on Amazon Linux 2023 use `sudo dnf install -y python3-pip` instead)
 - Instance type: `t3.micro`/`t3.small` is enough for typical management workloads
 - Security group: allow inbound **SSH (22)** from your own IP only. No other inbound port is required if you use the Cloudflare Tunnel option below.
 
@@ -234,7 +234,7 @@ sudo systemctl status mcp-manager --no-pager
 
 ### 6. Elastic IP
 
-Only needed for Option B (a stable ALB target) or if you have another reason to need a fixed public IP. Not needed for the Cloudflare Tunnel path, since the tunnel connects outbound regardless of the instance's address.
+Not required for either networking option. The Cloudflare Tunnel connects outbound regardless of the instance's address, and an ALB registers targets by instance ID or private IP, so it doesn't need one either. Only add an Elastic IP if something else in your setup depends on a fixed public IP for this instance.
 
 ## ChatGPT and Claude
 
