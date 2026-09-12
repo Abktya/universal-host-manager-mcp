@@ -6,8 +6,7 @@
     <string>com.user.mcpmanager</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/path/to/universal-host-manager-mcp/.venv/bin/python</string>
-        <string>/path/to/universal-host-manager-mcp/server.py</string>
+        <string>/path/to/universal-host-manager-mcp/.venv/bin/universal-host-manager-mcp</string>
     </array>
     <key>WorkingDirectory</key>
     <string>/path/to/universal-host-manager-mcp</string>

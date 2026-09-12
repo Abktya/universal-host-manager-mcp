@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "universal-host-manager-mcp"
+version = "0.1.0"
+description = "Cross-platform FastMCP server for authenticated remote Linux/macOS host administration"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Ahmet Baktiaya" },
+]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "chatgpt",
+    "remote-shell",
+    "devops",
+    "sysadmin",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = [
+    "fastmcp>=2.13,<5",
+    "python-dotenv>=1.0,<2",
+]
+
+[project.urls]
+Homepage = "https://github.com/Abktya/universal-host-manager-mcp"
+Repository = "https://github.com/Abktya/universal-host-manager-mcp"
+Issues = "https://github.com/Abktya/universal-host-manager-mcp/issues"
+Security = "https://github.com/Abktya/universal-host-manager-mcp/blob/main/SECURITY.md"
+
+[project.scripts]
+universal-host-manager-mcp = "universal_host_manager_mcp:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/universal_host_manager_mcp"]

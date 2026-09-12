@@ -79,12 +79,35 @@ This project uses FastMCP's `Auth0Provider` fixed-client OAuth integration.
 
 FastMCP also supports an Auth0 MCP-native/DCR path through `Auth0MCPProvider`. This repository currently uses the manually managed, fixed-client `Auth0Provider` path.
 
+## Install
+
+From PyPI (recommended):
+
+```bash
+pip install universal-host-manager-mcp
+```
+
+Or with [uv](https://docs.astral.sh/uv/) / [pipx](https://pipx.pypa.io/), without polluting a project environment:
+
+```bash
+uvx universal-host-manager-mcp
+```
+
+From source (for development):
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
 ## Run
 
 ```bash
-source .venv/bin/activate
-python server.py
+universal-host-manager-mcp
 ```
+
+(Running from a source checkout with the `.venv` activated works the same way — the console script is installed by `pip install -e .`.)
 
 With the default port, the Streamable HTTP endpoint is:
 
@@ -95,7 +118,7 @@ http://127.0.0.1:8765/mcp
 For an intentional local-only test without Auth0:
 
 ```bash
-ALLOW_INSECURE_NO_AUTH=true python server.py
+ALLOW_INSECURE_NO_AUTH=true universal-host-manager-mcp
 ```
 
 Do not use insecure mode on a publicly reachable endpoint.

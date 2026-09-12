@@ -243,7 +243,8 @@ def system_metrics() -> str:
     )
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Entry point used by the ``universal-host-manager-mcp`` console script."""
     logger.info(
         "Starting Universal Host Manager on %s:%s (OS=%s, workspace=%s)",
         HOST,
@@ -252,3 +253,7 @@ if __name__ == "__main__":
         WORKSPACE_ROOT,
     )
     mcp.run(transport="streamable-http", host=HOST, port=PORT)
+
+
+if __name__ == "__main__":
+    main()
