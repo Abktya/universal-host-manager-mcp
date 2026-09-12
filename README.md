@@ -163,6 +163,79 @@ https://mcp.example.com/mcp
 
 Set `MCP_BASE_URL=https://mcp.example.com`; do not include `/mcp` in `MCP_BASE_URL`.
 
+## AWS EC2 Deployment
+
+These steps deploy the server on an EC2 instance and expose it safely to remote MCP clients.
+
+### 1. Launch the instance
+
+- AMI: Ubuntu 24.04 LTS (or Amazon Linux 2023)
+- Instance type: `t3.micro`/`t3.small` is enough for typical management workloads
+- Security group: allow inbound **SSH (22)** from your own IP only. No other inbound port is required if you use the Cloudflare Tunnel option below.
+
+### 2. Install the server
+
+SSH into the instance, then install from PyPI:
+
+```bash
+sudo apt update && sudo apt install -y python3-pip python3-venv
+python3 -m venv ~/uhm-venv
+source ~/uhm-venv/bin/activate
+pip install universal-host-manager-mcp
+```
+
+### 3. Configure
+
+```bash
+mkdir -p ~/workspace
+cat > ~/.env << 'EOF'
+HOST=127.0.0.1
+PORT=8765
+MCP_BASE_URL=https://mcp.example.com
+MCP_WORKSPACE_DIR=/home/ubuntu/workspace
+
+AUTH0_DOMAIN=your-tenant.eu.auth0.com
+AUTH0_CLIENT_ID=replace_me
+AUTH0_CLIENT_SECRET=replace_me
+AUTH0_AUDIENCE=https://mcp.example.com/
+EOF
+chmod 600 ~/.env
+```
+
+Keep `HOST=127.0.0.1`. The server should never listen directly on the instance's public interface — internet exposure is handled entirely by the tunnel or load balancer described below, not by opening the instance's own port.
+
+### 4. Networking: get an HTTPS URL to the instance
+
+Auth0 OAuth requires HTTPS. Pick one option:
+
+**Option A — Cloudflare Tunnel (recommended, no inbound port needed)**
+
+Run the steps from the [Cloudflare Tunnel](#cloudflare-tunnel) section above, from the EC2 instance. Because the tunnel is an outbound-only connection, you don't need to open any inbound port beyond SSH, don't need an Elastic IP, and the instance can even sit in a private subnet behind a NAT gateway.
+
+**Option B — Application Load Balancer with an ACM certificate**
+
+- Request an ACM certificate for your domain and attach it to an ALB
+- Create an HTTPS (443) listener on the ALB forwarding to the instance's `PORT`
+- Security group on the instance: allow inbound `PORT` **only from the ALB's security group**, never from `0.0.0.0/0`
+- Point your DNS at the ALB and set `MCP_BASE_URL` to that hostname
+
+### 5. Run as a systemd service
+
+Reuse the included unit (see [Background service](#background-service) below):
+
+```bash
+sudo cp examples/mcp-manager.service /etc/systemd/system/
+# edit User=, WorkingDirectory=, EnvironmentFile= and ExecStart= to point at
+# ~/uhm-venv/bin/universal-host-manager-mcp and ~/.env
+sudo systemctl daemon-reload
+sudo systemctl enable --now mcp-manager
+sudo systemctl status mcp-manager --no-pager
+```
+
+### 6. Elastic IP
+
+Only needed for Option B (a stable ALB target) or if you have another reason to need a fixed public IP. Not needed for the Cloudflare Tunnel path, since the tunnel connects outbound regardless of the instance's address.
+
 ## ChatGPT and Claude
 
 Add the public Streamable HTTP URL to the client's MCP/connector configuration:
