@@ -42,17 +42,34 @@ The workspace boundary applies to the file tools. It does **not** sandbox `run_c
 
 ## Install
 
+### PyPI (recommended)
+
+```bash
+pip install universal-host-manager-mcp
+```
+
+### uv / pipx
+
+Without polluting a project environment:
+
+```bash
+uvx universal-host-manager-mcp
+```
+
+### From source (for development)
+
 ```bash
 git clone https://github.com/Abktya/universal-host-manager-mcp.git
 cd universal-host-manager-mcp
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
+pip install -e .
 cp .env.example .env
 ```
 
-Edit `.env` and use an explicitly restricted workspace:
+### Configure
+
+Create a `.env` file (copy `.env.example` if you installed from source) with an explicitly restricted workspace:
 
 ```dotenv
 HOST=127.0.0.1
@@ -81,28 +98,6 @@ This project uses FastMCP's `Auth0Provider` fixed-client OAuth integration.
 7. Keep RS256 signing enabled.
 
 FastMCP also supports an Auth0 MCP-native/DCR path through `Auth0MCPProvider`. This repository currently uses the manually managed, fixed-client `Auth0Provider` path.
-
-## Install
-
-From PyPI (recommended):
-
-```bash
-pip install universal-host-manager-mcp
-```
-
-Or with [uv](https://docs.astral.sh/uv/) / [pipx](https://pipx.pypa.io/), without polluting a project environment:
-
-```bash
-uvx universal-host-manager-mcp
-```
-
-From source (for development):
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
-```
 
 ## Run
 
