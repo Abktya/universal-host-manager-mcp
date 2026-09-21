@@ -53,8 +53,12 @@ def _validate_hostname(value: str, *, ngrok: bool = False) -> str:
         raise ValueError("Enter a complete hostname containing a dot, not a short name such as 'test'.")
     if len(hostname) > 253 or any(not _HOST_LABEL.fullmatch(label) for label in hostname.split(".")):
         raise ValueError("That hostname is not valid. Example: mcp.example.com")
-    if ngrok and not hostname.endswith((".ngrok-free.app", ".ngrok.app")):
-        raise ValueError("Enter the static domain shown in your ngrok dashboard, usually ending in .ngrok-free.app.")
+    if ngrok and not hostname.endswith(
+        (".ngrok-free.dev", ".ngrok-free.app", ".ngrok.dev", ".ngrok.app")
+    ):
+        raise ValueError(
+            "Enter the dev/static domain shown in your ngrok dashboard, such as name.ngrok-free.dev."
+        )
     return hostname
 
 
@@ -270,7 +274,9 @@ def ask_networking() -> NetworkConfig:
             "cloudflared tunnel run universal-host-manager-mcp"))
     if choice == "3":
         console.print("Claim a free static domain first at [link=https://dashboard.ngrok.com/domains]https://dashboard.ngrok.com/domains[/link]. Do not enter a made-up name.")
-        hostname = _ask_hostname("Your claimed ngrok static domain (for example your-name.ngrok-free.app)", ngrok=True)
+        hostname = _ask_hostname(
+            "Your ngrok dev/static domain (for example your-name.ngrok-free.dev)", ngrok=True
+        )
         return NetworkConfig("ngrok static domain", f"https://{hostname}", port, True, (
             "ngrok config add-authtoken <your-token>", f"ngrok http --url={hostname} {port}"))
     return NetworkConfig("Existing HTTPS URL", _ask_https_base_url(), port, True)

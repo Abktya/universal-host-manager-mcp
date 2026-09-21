@@ -17,10 +17,15 @@ def test_hostname_validation_rejects_short_or_url_values():
 
 
 def test_ngrok_requires_a_real_static_domain_suffix():
-    assert (
-        setup_wizard._validate_hostname("demo.ngrok-free.app", ngrok=True)
-        == "demo.ngrok-free.app"
+    accepted = (
+        "demo.ngrok-free.dev",
+        "demo.ngrok-free.app",
+        "demo.ngrok.dev",
+        "demo.ngrok.app",
     )
+    for hostname in accepted:
+        assert setup_wizard._validate_hostname(hostname, ngrok=True) == hostname
+
     with pytest.raises(ValueError):
         setup_wizard._validate_hostname("test.example.com", ngrok=True)
 

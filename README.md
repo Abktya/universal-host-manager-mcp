@@ -237,21 +237,21 @@ Auth0 OAuth needs a stable HTTPS URL, but you don't need to own a domain to get 
    ngrok config add-authtoken <your-token>
    ```
 
-3. Claim your free static domain from the ngrok dashboard (**Domains** → **New Domain**). You'll get something like `your-name.ngrok-free.app`.
+3. Claim your free static domain from the ngrok dashboard (**Domains** → **New Domain**). You'll get something like `your-name.ngrok-free.dev`.
 4. Start the tunnel, pointing at the port the server listens on:
 
    ```bash
-   ngrok http --url=your-name.ngrok-free.app 8765
+   ngrok http --url=your-name.ngrok-free.dev 8765
    ```
 
    Leave this running in a terminal, `tmux`/`screen` session, or as its own systemd service alongside the one in [Background service](#background-service).
-5. Set `MCP_BASE_URL=https://your-name.ngrok-free.app` in `.env` (keep `HOST=127.0.0.1`, exactly as with the Cloudflare Tunnel setup above — ngrok forwards to your local port, the server itself still only listens on loopback).
-6. In Auth0, set the application's callback URL to `https://your-name.ngrok-free.app/auth/callback`; set web origins and logout URLs to `https://your-name.ngrok-free.app` (see [Auth0 setup](#auth0-setup)).
+5. Set `MCP_BASE_URL=https://your-name.ngrok-free.dev` in `.env` (keep `HOST=127.0.0.1`, exactly as with the Cloudflare Tunnel setup above — ngrok forwards to your local port, the server itself still only listens on loopback).
+6. In Auth0, set the application's callback URL to `https://your-name.ngrok-free.dev/auth/callback`; set web origins and logout URLs to `https://your-name.ngrok-free.dev` (see [Auth0 setup](#auth0-setup)).
 
 Your remote MCP URL is:
 
 ```text
-https://your-name.ngrok-free.app/mcp
+https://your-name.ngrok-free.dev/mcp
 ```
 
 This is a good fit for personal use or a small number of clients. For production traffic at scale, ngrok's free tier applies connection/bandwidth limits — check their [pricing page](https://ngrok.com/pricing) if you outgrow it, or switch to the domain-based Cloudflare Tunnel setup above.
