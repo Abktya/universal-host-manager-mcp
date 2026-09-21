@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 .venv/
+.release-venv/
 venv/
 __pycache__/
 *.py[cod]
