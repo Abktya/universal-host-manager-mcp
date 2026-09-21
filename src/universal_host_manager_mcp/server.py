@@ -68,15 +68,19 @@ if all(auth_values):
 elif any(auth_values):
     raise RuntimeError(
         "Incomplete Auth0 configuration. Set AUTH0_DOMAIN, AUTH0_CLIENT_ID, "
-        "AUTH0_CLIENT_SECRET and AUTH0_AUDIENCE."
+        "AUTH0_CLIENT_SECRET and AUTH0_AUDIENCE — or run 'uhm-setup' to "
+        "regenerate .env from scratch."
     )
 elif ALLOW_INSECURE_NO_AUTH:
     auth = None
     logger.warning("Authentication is disabled by ALLOW_INSECURE_NO_AUTH=true.")
 else:
     raise RuntimeError(
-        "Auth0 configuration is missing. Refusing to start without authentication. "
-        "For local-only development, explicitly set ALLOW_INSECURE_NO_AUTH=true."
+        "No .env found (or Auth0 isn't configured in it). Refusing to start "
+        "without authentication. Run 'uhm-setup' for an interactive setup "
+        "wizard, or see the README's Configure section to create .env by "
+        "hand. For local-only development, explicitly set "
+        "ALLOW_INSECURE_NO_AUTH=true instead."
     )
 
 mcp = FastMCP("Universal Host Manager", auth=auth)
