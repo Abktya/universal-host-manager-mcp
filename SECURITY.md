@@ -22,6 +22,27 @@ A command can use absolute paths or access any resource permitted to the OS user
 - Review logs and rotate credentials if an MCP client or account is compromised.
 - For stronger isolation, run the service inside a locked-down container or VM.
 
+## Logging
+
+`run_command`'s content can include secrets — tokens or passwords passed as
+command-line arguments, for example. `LOG_COMMANDS` is `false` by default: only
+the timeout is logged for each call, never the command text. Set
+`LOG_COMMANDS=true` only if you specifically need a command-content audit trail
+and understand it may put secrets in your logs; secure and rotate log access
+accordingly if you do.
+
+## Network calls made by this server
+
+Besides serving MCP requests, the process makes two categories of outbound
+calls:
+
+- To Auth0, for OAuth token validation (required, cannot be disabled while
+  authentication is enabled).
+- FastMCP itself normally checks PyPI once per 12h for a newer FastMCP
+  release. This server disables that check by default (unless you've
+  explicitly set `FASTMCP_CHECK_FOR_UPDATES` yourself) so startup stays
+  deterministic and doesn't depend on reaching PyPI.
+
 ## Reporting a vulnerability
 
 Please do not disclose credentials or exploitable deployment details in a public

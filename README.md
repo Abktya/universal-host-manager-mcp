@@ -4,6 +4,7 @@
 A cross-platform [Model Context Protocol](https://modelcontextprotocol.io/) server for administering a Linux or macOS host through MCP clients such as ChatGPT and Claude.
 
 [![Abktya/universal-host-manager-mcp MCP server](https://glama.ai/mcp/servers/Abktya/universal-host-manager-mcp/badges/score.svg)](https://glama.ai/mcp/servers/Abktya/universal-host-manager-mcp)
+[![tests](https://github.com/Abktya/universal-host-manager-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/Abktya/universal-host-manager-mcp/actions/workflows/tests.yml)
 
 It uses [FastMCP](https://gofastmcp.com/) Streamable HTTP transport, Auth0 OAuth, bounded file tools, output limits and command timeouts.
 
@@ -327,7 +328,18 @@ launchctl kickstart -k gui/$(id -u)/com.user.mcpmanager
 | `MAX_READ_BYTES` | `5000000` | Maximum file size read by `read_file` |
 | `MAX_WRITE_BYTES` | `5000000` | Maximum content size written by `write_file` |
 | `LOG_LEVEL` | `INFO` | Python log level |
+| `LOG_COMMANDS` | `false` | Log `run_command`'s command text (may contain secrets) instead of just its timeout |
+| `FASTMCP_CHECK_FOR_UPDATES` | `off` (forced unless you set it) | FastMCP's own PyPI update-check on startup |
 | `ALLOW_INSECURE_NO_AUTH` | `false` | Explicit local-development authentication bypass |
+
+## Testing
+
+```bash
+pip install -e ".[dev]"
+pytest tests/
+```
+
+CI runs the suite against fastmcp 2.13, 3.x and 4.x on every push (see the badge above), since `@mcp.tool()`'s return type changed between major versions and tests call tools through a small version-agnostic helper (`tests/conftest.py::call_tool`) to cover all three.
 
 ## Download
 

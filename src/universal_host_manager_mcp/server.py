@@ -16,11 +16,21 @@ from functools import wraps
 from pathlib import Path
 from typing import Callable, ParamSpec, TypeVar
 
+import fastmcp
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.auth0 import Auth0Provider
 
 load_dotenv()
+
+# FastMCP normally makes an outbound call to PyPI on every startup to check
+# for a newer release (cached 12h, via fastmcp.utilities.version_check). Skip
+# it by default: this server already logs its own version/startup, doesn't
+# need a second update-check call, and this keeps startup deterministic and
+# fully offline unless the operator opts back in. The setting doesn't exist
+# on fastmcp 2.x (added later), hence the hasattr guard.
+if not os.getenv("FASTMCP_CHECK_FOR_UPDATES") and hasattr(fastmcp.settings, "check_for_updates"):
+    fastmcp.settings.check_for_updates = "off"
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
@@ -42,6 +52,10 @@ MAX_WRITE_BYTES = int(os.getenv("MAX_WRITE_BYTES", "5000000"))
 ALLOW_INSECURE_NO_AUTH = os.getenv("ALLOW_INSECURE_NO_AUTH", "false").lower() in {
     "1", "true", "yes",
 }
+# Off by default: command text can contain secrets (tokens passed as CLI
+# args, credentials in a curl -H header, etc.), so it isn't logged unless
+# explicitly opted into. The timeout is still always logged either way.
+LOG_COMMANDS = os.getenv("LOG_COMMANDS", "false").lower() in {"1", "true", "yes"}
 
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
 AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID")
@@ -175,7 +189,10 @@ def run_command(command: str, timeout: int = DEFAULT_CMD_TIMEOUT) -> str:
     redirection and invoked programs may access anything permitted to the server's
     OS user.
     """
-    logger.info("[TOOL] run_command timeout=%ss command=%r", timeout, command[:150])
+    if LOG_COMMANDS:
+        logger.info("[TOOL] run_command timeout=%ss command=%r", timeout, command[:150])
+    else:
+        logger.info("[TOOL] run_command timeout=%ss", timeout)
     return _run(command, timeout)
 
 

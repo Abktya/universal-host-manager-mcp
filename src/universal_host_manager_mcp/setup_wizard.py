@@ -168,6 +168,11 @@ def write_env(path: Path, values: dict) -> None:
     if path.exists():
         backup = path.with_suffix(path.suffix + ".bak")
         shutil.copy2(path, backup)
+        # shutil.copy2 preserves the SOURCE file's permission bits, which may
+        # not be 600 if the original .env was created by hand (e.g. `touch`,
+        # or copied from .env.example). Force it here too, since it can
+        # contain the same secrets as the file it was backing up.
+        os.chmod(backup, stat.S_IRUSR | stat.S_IWUSR)
         console.print(f"[dim]Existing .env backed up to {backup}[/dim]")
 
     lines = [f"{key}={value}" for key, value in values.items()]
