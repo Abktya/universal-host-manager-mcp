@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "universal-host-manager-mcp"
-version = "0.1.5"
+version = "0.1.6"
 description = "Cross-platform FastMCP server for authenticated remote Linux/macOS host administration"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -30,6 +30,8 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: System :: Systems Administration",
 ]
 dependencies = [
