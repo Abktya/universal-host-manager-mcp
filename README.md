@@ -69,7 +69,15 @@ cp .env.example .env
 
 ### Configure
 
-Create a `.env` file (copy `.env.example` if you installed from source) with an explicitly restricted workspace:
+The easiest way is the interactive setup wizard, installed alongside the server:
+
+```bash
+uhm-setup
+```
+
+It asks for your workspace directory (offering to create it, and warning before pointing it at a broad system or home directory), walks you through picking a networking method (Cloudflare Tunnel, ngrok's free static domain, or your own URL), checks that your Auth0 tenant domain actually resolves, and writes a `.env` file with `600` permissions in the current directory — backing up any existing one to `.env.bak` first.
+
+Prefer to do it by hand? Create a `.env` file (copy `.env.example` if you installed from source) with an explicitly restricted workspace:
 
 ```dotenv
 HOST=127.0.0.1
