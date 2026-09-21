@@ -30,6 +30,68 @@ def test_ngrok_requires_a_real_static_domain_suffix():
         setup_wizard._validate_hostname("test.example.com", ngrok=True)
 
 
+def test_ngrok_follow_up_explains_installation_and_token_setup():
+    steps = setup_wizard._ngrok_follow_up("demo.ngrok-free.dev", 8700)
+    guidance = "\n".join(steps)
+
+    assert "sudo snap install ngrok" in guidance
+    assert "dashboard.ngrok.com/get-started/your-authtoken" in guidance
+    assert "ngrok config add-authtoken YOUR_NGROK_TOKEN" in guidance
+    assert "domain ID" in guidance
+    assert "ngrok http --url=demo.ngrok-free.dev 8700" in guidance
+
+
+def test_linux_autostart_configures_both_ngrok_services(tmp_path):
+    script = "\n".join(setup_wizard._remote_autostart_steps(
+        "demo.ngrok-free.dev", 8700, "linux", tmp_path,
+        "/venv/bin/universal-host-manager-mcp",
+    ))
+    assert "universal-host-manager-mcp.service" in script
+    assert "universal-host-manager-ngrok.service" in script
+    assert f"WorkingDirectory={tmp_path}" in script
+    assert "ExecStart=/venv/bin/universal-host-manager-mcp" in script
+    assert "ngrok-free.dev 8700" in script
+    assert "enable-linger" in script
+    assert "<<EOF" in script
+
+
+def test_macos_autostart_configures_both_ngrok_agents(tmp_path):
+    script = "\n".join(setup_wizard._remote_autostart_steps(
+        "demo.ngrok-free.dev", 8700, "macos", tmp_path,
+        "/venv/bin/universal-host-manager-mcp",
+    ))
+    assert "io.bkty.universal-host-manager-mcp.plist" in script
+    assert "io.bkty.universal-host-manager-ngrok.plist" in script
+    assert "--url=demo.ngrok-free.dev" in script
+    assert "launchctl bootstrap" in script
+
+
+def test_cloudflare_guidance_and_linux_autostart(tmp_path):
+    guidance = "\n".join(setup_wizard._cloudflare_follow_up("mcp.example.com", 8765))
+    assert "connections/connect-networks/downloads" in guidance
+    assert "brew install cloudflared" in guidance
+    assert "cloudflared tunnel login" in guidance
+    assert "cloudflared tunnel route dns universal-host-manager-mcp mcp.example.com" in guidance
+
+    script = "\n".join(setup_wizard._cloudflare_autostart_steps(
+        "linux", tmp_path, "/venv/bin/universal-host-manager-mcp",
+    ))
+    assert "universal-host-manager-mcp.service" in script
+    assert "universal-host-manager-cloudflared.service" in script
+    assert "cloudflared" in script
+    assert "tunnel run universal-host-manager-mcp" in script
+    assert "enable-linger" in script
+
+
+def test_cloudflare_macos_autostart_configures_both_agents(tmp_path):
+    script = "\n".join(setup_wizard._cloudflare_autostart_steps(
+        "macos", tmp_path, "/venv/bin/universal-host-manager-mcp",
+    ))
+    assert "io.bkty.universal-host-manager-mcp.plist" in script
+    assert "io.bkty.universal-host-manager-cloudflared.plist" in script
+    assert "launchctl bootstrap" in script
+
+
 def test_public_url_must_be_https_origin_without_mcp_path():
     assert setup_wizard._validate_https_base_url("https://mcp.example.com/") == "https://mcp.example.com"
     for value in ("http://mcp.example.com", "https://test", "https://mcp.example.com/mcp"):

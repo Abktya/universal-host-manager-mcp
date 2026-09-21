@@ -16,6 +16,7 @@ from typing import Optional
 from urllib.parse import urlparse
 
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
@@ -35,6 +36,7 @@ class NetworkConfig:
     port: int
     remote: bool
     follow_up: tuple[str, ...] = ()
+    autostart_target: Optional[str] = None
 
 
 def _is_dangerous(path: Path) -> bool:
@@ -250,6 +252,222 @@ def ask_workspace_dir() -> Path:
             continue
         return path.resolve()
 
+def _cloudflare_follow_up(hostname: str, port: int) -> tuple[str, ...]:
+    return (
+        "Install cloudflared: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/",
+        "macOS with Homebrew: brew install cloudflared",
+        "Ubuntu/Debian: follow the Cloudflare package-repository commands on the download page.",
+        "Authenticate: cloudflared tunnel login",
+        "Create the tunnel: cloudflared tunnel create universal-host-manager-mcp",
+        f"Create DNS routing: cloudflared tunnel route dns universal-host-manager-mcp {hostname}",
+        "Create ~/.cloudflared/config.yml using the configuration shown in the README.",
+        "Start the tunnel in a second terminal: cloudflared tunnel run universal-host-manager-mcp",
+        "Keep both the MCP server terminal and the cloudflared terminal running.",
+    )
+
+
+def _ask_autostart_target(tunnel_name: str) -> Optional[str]:
+    if not Confirm.ask(
+        f"Would you like commands that start both the MCP server and {tunnel_name} automatically?",
+        default=False,
+    ):
+        return None
+    console.print("The wizard will only print the commands; review and run them after setup.")
+    console.print("  [bold]1[/bold] Linux server (systemd user services)")
+    console.print("  [bold]2[/bold] macOS (LaunchAgents)")
+    default_target = "1" if sys.platform.startswith("linux") else "2"
+    target_choice = Prompt.ask(
+        "Which device will run the services?",
+        choices=["1", "2"],
+        default=default_target,
+    )
+    return "linux" if target_choice == "1" else "macos"
+
+
+def _ngrok_follow_up(hostname: str, port: int) -> tuple[str, ...]:
+    return (
+        "Install ngrok on Ubuntu: sudo snap install ngrok",
+        "Open https://dashboard.ngrok.com/get-started/your-authtoken and sign in.",
+        "Copy and run: ngrok config add-authtoken YOUR_NGROK_TOKEN",
+        "Replace YOUR_NGROK_TOKEN with the authtoken from the dashboard; do not use the domain ID and never share the token.",
+        f"Start the tunnel in a second terminal: ngrok http --url={hostname} {port}",
+        "Keep both the MCP server terminal and the ngrok terminal running.",
+    )
+
+
+def _cloudflare_autostart_steps(
+    target: str,
+    config_dir: Path,
+    server_command: str,
+) -> tuple[str, ...]:
+    config_path = str(config_dir)
+    if target == "linux":
+        script = f"""Copy this whole block to keep BOTH services running on Linux:
+CLOUDFLARED_BIN="$(command -v cloudflared)"
+mkdir -p "$HOME/.config/systemd/user"
+cat > "$HOME/.config/systemd/user/universal-host-manager-mcp.service" <<EOF
+[Unit]
+Description=Universal Host Manager MCP
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory={config_path}
+ExecStart={server_command}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+cat > "$HOME/.config/systemd/user/universal-host-manager-cloudflared.service" <<EOF
+[Unit]
+Description=Cloudflare Tunnel for Universal Host Manager MCP
+After=network-online.target universal-host-manager-mcp.service
+Wants=network-online.target universal-host-manager-mcp.service
+
+[Service]
+ExecStart=$CLOUDFLARED_BIN tunnel run universal-host-manager-mcp
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+systemctl --user daemon-reload
+systemctl --user enable --now universal-host-manager-mcp.service universal-host-manager-cloudflared.service
+sudo loginctl enable-linger "$USER"
+systemctl --user status universal-host-manager-mcp.service universal-host-manager-cloudflared.service --no-pager"""
+    else:
+        script = f"""Copy this whole block to keep BOTH services running on macOS:
+CLOUDFLARED_BIN="$(command -v cloudflared)"
+mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+cat > "$HOME/Library/LaunchAgents/io.bkty.universal-host-manager-mcp.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>io.bkty.universal-host-manager-mcp</string>
+  <key>ProgramArguments</key><array><string>{server_command}</string></array>
+  <key>WorkingDirectory</key><string>{config_path}</string>
+  <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>$HOME/Library/Logs/uhm-mcp.log</string>
+  <key>StandardErrorPath</key><string>$HOME/Library/Logs/uhm-mcp-error.log</string>
+</dict></plist>
+EOF
+cat > "$HOME/Library/LaunchAgents/io.bkty.universal-host-manager-cloudflared.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>io.bkty.universal-host-manager-cloudflared</string>
+  <key>ProgramArguments</key>
+  <array><string>$CLOUDFLARED_BIN</string><string>tunnel</string><string>run</string><string>universal-host-manager-mcp</string></array>
+  <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>$HOME/Library/Logs/uhm-cloudflared.log</string>
+  <key>StandardErrorPath</key><string>$HOME/Library/Logs/uhm-cloudflared-error.log</string>
+</dict></plist>
+EOF
+launchctl bootout gui/$(id -u) "$HOME/Library/LaunchAgents/io.bkty.universal-host-manager-mcp.plist" 2>/dev/null || true
+launchctl bootout gui/$(id -u) "$HOME/Library/LaunchAgents/io.bkty.universal-host-manager-cloudflared.plist" 2>/dev/null || true
+launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/io.bkty.universal-host-manager-mcp.plist"
+launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/io.bkty.universal-host-manager-cloudflared.plist"
+launchctl print gui/$(id -u)/io.bkty.universal-host-manager-mcp
+launchctl print gui/$(id -u)/io.bkty.universal-host-manager-cloudflared"""
+    return (script,)
+
+
+def _remote_autostart_steps(
+    hostname: str,
+    port: int,
+    target: str,
+    config_dir: Path,
+    server_command: str,
+) -> tuple[str, ...]:
+    config_path = str(config_dir)
+    if target == "linux":
+        script = f"""After saving the ngrok authtoken, copy this whole block to keep BOTH services running on Linux:
+NGROK_BIN="$(command -v ngrok)"
+mkdir -p "$HOME/.config/systemd/user"
+cat > "$HOME/.config/systemd/user/universal-host-manager-mcp.service" <<EOF
+[Unit]
+Description=Universal Host Manager MCP
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory={config_path}
+ExecStart={server_command}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+cat > "$HOME/.config/systemd/user/universal-host-manager-ngrok.service" <<EOF
+[Unit]
+Description=ngrok tunnel for Universal Host Manager MCP
+After=network-online.target universal-host-manager-mcp.service
+Wants=network-online.target universal-host-manager-mcp.service
+
+[Service]
+ExecStart=$NGROK_BIN http --url={hostname} {port}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+systemctl --user daemon-reload
+systemctl --user enable --now universal-host-manager-mcp.service universal-host-manager-ngrok.service
+sudo loginctl enable-linger "$USER"
+systemctl --user status universal-host-manager-mcp.service universal-host-manager-ngrok.service --no-pager"""
+    else:
+        script = f"""After saving the ngrok authtoken, copy this whole block to keep BOTH services running on macOS:
+NGROK_BIN="$(command -v ngrok)"
+mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+cat > "$HOME/Library/LaunchAgents/io.bkty.universal-host-manager-mcp.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>io.bkty.universal-host-manager-mcp</string>
+  <key>ProgramArguments</key>
+  <array><string>{server_command}</string></array>
+  <key>WorkingDirectory</key><string>{config_path}</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>$HOME/Library/Logs/uhm-mcp.log</string>
+  <key>StandardErrorPath</key><string>$HOME/Library/Logs/uhm-mcp-error.log</string>
+</dict>
+</plist>
+EOF
+cat > "$HOME/Library/LaunchAgents/io.bkty.universal-host-manager-ngrok.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>io.bkty.universal-host-manager-ngrok</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$NGROK_BIN</string>
+    <string>http</string>
+    <string>--url={hostname}</string>
+    <string>{port}</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>$HOME/Library/Logs/uhm-ngrok.log</string>
+  <key>StandardErrorPath</key><string>$HOME/Library/Logs/uhm-ngrok-error.log</string>
+</dict>
+</plist>
+EOF
+launchctl bootout gui/$(id -u) "$HOME/Library/LaunchAgents/io.bkty.universal-host-manager-mcp.plist" 2>/dev/null || true
+launchctl bootout gui/$(id -u) "$HOME/Library/LaunchAgents/io.bkty.universal-host-manager-ngrok.plist" 2>/dev/null || true
+launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/io.bkty.universal-host-manager-mcp.plist"
+launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/io.bkty.universal-host-manager-ngrok.plist"
+launchctl print gui/$(id -u)/io.bkty.universal-host-manager-mcp
+launchctl print gui/$(id -u)/io.bkty.universal-host-manager-ngrok"""
+    return (script,)
+
 
 def ask_networking() -> NetworkConfig:
     console.print(Panel(
@@ -266,19 +484,42 @@ def ask_networking() -> NetworkConfig:
     if choice == "1":
         return NetworkConfig("Local-only test", f"http://127.0.0.1:{port}", port, False)
     if choice == "2":
+        console.print(Panel(
+            "1. Install cloudflared from the official guide:\n"
+            "   [link=https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/]"
+            "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/[/link]\n"
+            "2. macOS: [cyan]brew install cloudflared[/cyan]\n"
+            "3. Ubuntu/Debian: use the package-repository commands on that page.\n"
+            "4. Sign in: [cyan]cloudflared tunnel login[/cyan]\n\n"
+            "You must own a domain added to your Cloudflare account for this option.",
+            title="Cloudflare Tunnel setup",
+        ))
         hostname = _ask_hostname("Public hostname routed through Cloudflare (for example mcp.example.com)")
-        return NetworkConfig("Cloudflare Tunnel", f"https://{hostname}", port, True, (
-            "cloudflared tunnel login", "cloudflared tunnel create universal-host-manager-mcp",
-            f"cloudflared tunnel route dns universal-host-manager-mcp {hostname}",
-            "Create ~/.cloudflared/config.yml using the README example, then run:",
-            "cloudflared tunnel run universal-host-manager-mcp"))
+        return NetworkConfig(
+            "Cloudflare Tunnel",
+            f"https://{hostname}",
+            port,
+            True,
+            _cloudflare_follow_up(hostname, port),
+            _ask_autostart_target("Cloudflare Tunnel"),
+        )
     if choice == "3":
-        console.print("Claim a free static domain first at [link=https://dashboard.ngrok.com/domains]https://dashboard.ngrok.com/domains[/link]. Do not enter a made-up name.")
+        console.print(Panel(
+            "1. On Ubuntu install ngrok: [cyan]sudo snap install ngrok[/cyan]\n"
+            "2. Claim a domain: [link=https://dashboard.ngrok.com/domains]https://dashboard.ngrok.com/domains[/link]\n"
+            "3. Open the authtoken page: [link=https://dashboard.ngrok.com/get-started/your-authtoken]https://dashboard.ngrok.com/get-started/your-authtoken[/link]\n"
+            "4. Copy and run: [cyan]ngrok config add-authtoken YOUR_NGROK_TOKEN[/cyan]\n\n"
+            "Replace the placeholder with the authtoken, not the domain ID. Never share the token. "
+            "If it was exposed, reset it in the ngrok dashboard.",
+            title="ngrok setup"))
         hostname = _ask_hostname(
             "Your ngrok dev/static domain (for example your-name.ngrok-free.dev)", ngrok=True
         )
-        return NetworkConfig("ngrok static domain", f"https://{hostname}", port, True, (
-            "ngrok config add-authtoken <your-token>", f"ngrok http --url={hostname} {port}"))
+        autostart_target = _ask_autostart_target("ngrok")
+        return NetworkConfig(
+            "ngrok static domain", f"https://{hostname}", port, True,
+            _ngrok_follow_up(hostname, port), autostart_target
+        )
     return NetworkConfig("Existing HTTPS URL", _ask_https_base_url(), port, True)
 
 
@@ -384,7 +625,37 @@ def _show_summary(env_path: Path, workspace: Path, network: NetworkConfig, *, au
     elif auth_configured:
         if network.follow_up:
             lines += ["", "Before connecting a remote client, complete these networking steps:"]
-            lines += [f"  [cyan]{item}[/cyan]" for item in network.follow_up]
+            lines += [f"  [cyan]{escape(item)}[/cyan]" for item in network.follow_up]
+        if network.mode in {"Cloudflare Tunnel", "ngrok static domain"}:
+            lines += [
+                "",
+                "[bold yellow]The MCP server and the tunnel must both remain running. "
+                "Closing either one takes the public endpoint offline.[/bold yellow]",
+            ]
+        else:
+            lines += [
+                "",
+                "[bold yellow]The MCP server must remain running or the endpoint goes offline.[/bold yellow]",
+            ]
+        if network.autostart_target:
+            hostname = urlparse(network.base_url).hostname
+            if hostname:
+                lines += ["", "Optional automatic-start commands:"]
+                if network.mode == "Cloudflare Tunnel":
+                    steps = _cloudflare_autostart_steps(
+                        network.autostart_target,
+                        env_path.parent,
+                        _server_command(),
+                    )
+                else:
+                    steps = _remote_autostart_steps(
+                        hostname,
+                        network.port,
+                        network.autostart_target,
+                        env_path.parent,
+                        _server_command(),
+                    )
+                lines += [f"[cyan]{escape(item)}[/cyan]" for item in steps]
         lines += ["", "Then add the MCP endpoint above to ChatGPT, Claude, or another MCP client."]
     console.print(Panel.fit("\n".join(lines)))
 

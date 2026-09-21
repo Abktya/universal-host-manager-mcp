@@ -218,6 +218,8 @@ cloudflared tunnel ingress validate
 cloudflared tunnel run universal-host-manager-mcp
 ```
 
+Keep both `universal-host-manager-mcp` and `cloudflared` running. Closing either process takes the public endpoint offline. The setup wizard can optionally print Linux systemd-user or macOS LaunchAgent commands for both processes.
+
 Your remote MCP URL will be:
 
 ```text
@@ -230,23 +232,25 @@ Set `MCP_BASE_URL=https://mcp.example.com`; do not include `/mcp` in `MCP_BASE_U
 
 Auth0 OAuth needs a stable HTTPS URL, but you don't need to own a domain to get one. Unlike ngrok's old random URLs (which changed every restart) or Cloudflare's login-free [quick tunnels](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) (same problem), ngrok's free tier includes **one static subdomain per account** that never changes, at no cost.
 
-1. Create a free account at [ngrok.com](https://ngrok.com) and install the `ngrok` CLI.
-2. Add your auth token (shown on your ngrok dashboard):
+1. Create a free account at [ngrok.com](https://ngrok.com). On Ubuntu install the CLI with `sudo snap install ngrok`. On macOS or another platform, use ngrok's official [download instructions](https://ngrok.com/download).
+2. Open the [ngrok authtoken page](https://dashboard.ngrok.com/get-started/your-authtoken), copy your token, and run:
 
    ```bash
-   ngrok config add-authtoken <your-token>
+   ngrok config add-authtoken YOUR_NGROK_TOKEN
    ```
 
+   Use the **authtoken**, not the domain ID. Never share it; reset it in the dashboard if it is exposed.
 3. Claim your free static domain from the ngrok dashboard (**Domains** → **New Domain**). You'll get something like `your-name.ngrok-free.dev`.
-4. Start the tunnel, pointing at the port the server listens on:
+4. Start `universal-host-manager-mcp` from the directory containing `.env`.
+5. In a second terminal, start the tunnel:
 
    ```bash
    ngrok http --url=your-name.ngrok-free.dev 8765
    ```
 
-   Leave this running in a terminal, `tmux`/`screen` session, or as its own systemd service alongside the one in [Background service](#background-service).
-5. Set `MCP_BASE_URL=https://your-name.ngrok-free.dev` in `.env` (keep `HOST=127.0.0.1`, exactly as with the Cloudflare Tunnel setup above — ngrok forwards to your local port, the server itself still only listens on loopback).
-6. In Auth0, set the application's callback URL to `https://your-name.ngrok-free.dev/auth/callback`; set web origins and logout URLs to `https://your-name.ngrok-free.dev` (see [Auth0 setup](#auth0-setup)).
+   **Both processes must remain running.** Closing either one takes the public endpoint offline. The wizard can optionally print Linux systemd-user or macOS LaunchAgent commands that start both automatically.
+6. Set `MCP_BASE_URL=https://your-name.ngrok-free.dev` in `.env` (keep `HOST=127.0.0.1`; ngrok forwards to the local port while the server listens only on loopback).
+7. In Auth0, set the application's callback URL to `https://your-name.ngrok-free.dev/auth/callback`; set web origins and logout URLs to `https://your-name.ngrok-free.dev` (see [Auth0 setup](#auth0-setup)).
 
 Your remote MCP URL is:
 
