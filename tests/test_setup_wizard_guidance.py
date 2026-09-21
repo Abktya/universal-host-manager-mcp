@@ -44,6 +44,89 @@ def test_required_prompt_rejects_empty_value(monkeypatch):
     assert setup_wizard._ask_required("Client ID") == "client-id"
 
 
+def test_auth0_settings_are_derived_from_public_origin():
+    settings = dict(setup_wizard._auth0_settings("https://mcp.example.com/"))
+
+    assert settings["Application Ownership"] == "First-party"
+    assert settings["Application Type"] == "Regular Web Application"
+    assert settings["Application Login URI"] == "Leave blank"
+    assert settings["Allowed Callback URLs"] == "https://mcp.example.com/auth/callback"
+    assert settings["Allowed Logout URLs"] == "https://mcp.example.com"
+    assert settings["Allowed Web Origins"] == "https://mcp.example.com"
+    assert settings["Allowed Origins (CORS)"] == "https://mcp.example.com"
+    assert settings["API Identifier / Audience"] == "https://mcp.example.com/"
+    assert settings["MCP endpoint (for AI clients)"] == "https://mcp.example.com/mcp"
+
+
+def test_auth0_guidance_shows_fastmcp_callback(monkeypatch, capsys):
+    monkeypatch.setattr(setup_wizard.Confirm, "ask", lambda *args, **kwargs: False)
+
+    assert setup_wizard.ask_auth0("https://mcp.example.com/") is None
+
+    output = capsys.readouterr().out
+    assert "Allowed Callback URLs" in output
+    assert "Allowed Web Origins" in output
+    assert "AUTH0_SECRET" in output
+    assert "Claude, ChatGPT, or Grok callback URLs" in output
+
+
+
+def test_auth0_env_block_imports_required_application_values():
+    block = """
+    # copied from Auth0
+    AUTH0_DOMAIN=dev-example.eu.auth0.com
+    AUTH0_CLIENT_ID=client123
+    AUTH0_CLIENT_SECRET="real-secret-value"
+    AUTH0_SECRET=not-used
+    APP_BASE_URL=https://mcp.example.com
+    PORT=443
+    """
+
+    assert setup_wizard._parse_auth0_env_block(block) == {
+        "AUTH0_DOMAIN": "dev-example.eu.auth0.com",
+        "AUTH0_CLIENT_ID": "client123",
+        "AUTH0_CLIENT_SECRET": "real-secret-value",
+    }
+
+
+@pytest.mark.parametrize(
+    "secret",
+    ("******MASKED********", "********", "prefix*MIDDLE"),
+)
+def test_auth0_env_block_rejects_masked_secret(secret):
+    block = (
+        "AUTH0_DOMAIN=dev-example.eu.auth0.com\n"
+        "AUTH0_CLIENT_ID=client123\n"
+        f"AUTH0_CLIENT_SECRET={secret}\n"
+    )
+    with pytest.raises(ValueError, match="masked"):
+        setup_wizard._parse_auth0_env_block(block)
+
+
+def test_auth0_env_block_reports_missing_values():
+    with pytest.raises(ValueError, match="AUTH0_CLIENT_SECRET"):
+        setup_wizard._parse_auth0_env_block(
+            "AUTH0_DOMAIN=dev-example.eu.auth0.com\nAUTH0_CLIENT_ID=client123\n"
+        )
+
+
+def test_clipboard_import_parses_auth0_block(monkeypatch):
+    monkeypatch.setattr(
+        setup_wizard,
+        "_read_clipboard",
+        lambda: (
+            "AUTH0_DOMAIN=dev-example.eu.auth0.com\n"
+            "AUTH0_CLIENT_ID=client123\n"
+            "AUTH0_CLIENT_SECRET=real-secret\n"
+        ),
+    )
+    monkeypatch.setattr(setup_wizard.Prompt, "ask", lambda *args, **kwargs: "1")
+
+    values = setup_wizard._ask_auth0_application_values()
+
+    assert values["AUTH0_CLIENT_SECRET"] == "real-secret"
+
+
 def test_local_setup_writes_runnable_loopback_configuration(tmp_path, monkeypatch):
     workspace = tmp_path / "workspace"
     workspace.mkdir()

@@ -134,10 +134,36 @@ This project uses FastMCP's `Auth0Provider` fixed-client OAuth integration.
 2. Go to **Applications → APIs → Create API**.
 3. Use your public MCP URL as its **Identifier** (audience), for example `https://mcp.example.com/`. Keep **RS256** as the signing algorithm.
 4. Go to **Applications → Applications → Create Application**, enter a name, select **Regular Web Application**, and create it.
-5. Open the new application's **Settings** tab. Copy **Domain**, **Client ID**, and **Client Secret** into the matching wizard prompts. Copy the API's **Identifier** into `AUTH0_AUDIENCE`.
-6. Never share the Client Secret or commit `.env` to Git.
-7. Add only the callback URLs required by your MCP clients to the Auth0 application's allowed callback URLs.
-8. Set the application's allowed web origins and logout URLs as required by your clients.
+5. On Auth0's **Integrate into your application** page, click **Copy** above the `.env` block. The wizard can import `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, and `AUTH0_CLIENT_SECRET` from your clipboard or from a pasted block. If Auth0 displays `MASKED`, reveal and copy the real Client Secret from the application's **Settings** tab; masked secrets are rejected.
+6. Copy the API's **Identifier** into `AUTH0_AUDIENCE` when the wizard asks for it. It is intentionally separate because Auth0's application `.env` block does not contain the API audience.
+7. In the Auth0 application's **Settings**, use the MCP server's public origin (without `/mcp`) as follows:
+
+   | Auth0 field | Value |
+   | --- | --- |
+   | Application Ownership | **First-party** |
+   | Application Type | **Regular Web Application** |
+   | Application Login URI | Leave blank |
+   | Allowed Callback URLs | `https://mcp.example.com/auth/callback` |
+   | Allowed Logout URLs | `https://mcp.example.com` |
+   | Allowed Web Origins | `https://mcp.example.com` |
+   | Allowed Origins (CORS) | `https://mcp.example.com` |
+   | Allow Cross-Origin Authentication | Off / disabled |
+   | Cross-Origin Verification Fallback URL | Leave blank |
+   | API Identifier / Audience | `https://mcp.example.com/` |
+   | Signing Algorithm | **RS256** |
+   | MCP endpoint (entered in the AI client, not Auth0) | `https://mcp.example.com/mcp` |
+
+8. Save the Auth0 application settings, then run the wizard. Never share the Client Secret or commit `.env` to Git.
+
+The callback above is FastMCP's fixed upstream callback. Do **not** put Claude, ChatGPT, or Grok callback URLs into Auth0: those products are downstream MCP clients and FastMCP validates their redirect URIs separately during MCP client registration. Connect each product to `https://mcp.example.com/mcp`.
+
+Auth0's Python quickstart also shows `AUTH0_SECRET`, `APP_BASE_URL`, `PORT`, and sample Flask code. They belong to Auth0's standalone sample web application and are not used by this MCP server; the wizard safely ignores them when importing the copied block.
+
+Client notes:
+
+- ChatGPT supports MCP OAuth client registration with CIMD and DCR; add the public `/mcp` endpoint in ChatGPT developer mode.
+- Claude custom connectors accept the public `/mcp` endpoint and start OAuth when you connect.
+- Grok custom connectors accept a publicly reachable MCP server URL and complete any required authentication. Grok availability may depend on the current Grok plan and workspace controls.
 
 FastMCP also supports an Auth0 MCP-native/DCR path through `Auth0MCPProvider`. This repository currently uses the manually managed, fixed-client `Auth0Provider` path.
 
@@ -220,7 +246,7 @@ Auth0 OAuth needs a stable HTTPS URL, but you don't need to own a domain to get 
 
    Leave this running in a terminal, `tmux`/`screen` session, or as its own systemd service alongside the one in [Background service](#background-service).
 5. Set `MCP_BASE_URL=https://your-name.ngrok-free.app` in `.env` (keep `HOST=127.0.0.1`, exactly as with the Cloudflare Tunnel setup above — ngrok forwards to your local port, the server itself still only listens on loopback).
-6. In Auth0, add `https://your-name.ngrok-free.app` to the application's allowed callback URLs, web origins and logout URLs (see [Auth0 setup](#auth0-setup)) — you only need to do this once, since the domain is permanent.
+6. In Auth0, set the application's callback URL to `https://your-name.ngrok-free.app/auth/callback`; set web origins and logout URLs to `https://your-name.ngrok-free.app` (see [Auth0 setup](#auth0-setup)).
 
 Your remote MCP URL is:
 

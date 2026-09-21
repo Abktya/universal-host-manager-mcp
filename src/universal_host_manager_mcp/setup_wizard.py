@@ -7,6 +7,7 @@ import re
 import shlex
 import shutil
 import stat
+import subprocess
 import sys
 import urllib.request
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from urllib.parse import urlparse
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
+from rich.table import Table
 
 console = Console()
 
@@ -115,6 +117,114 @@ def _ask_required(prompt: str, *, password: bool = False, default: Optional[str]
         console.print("[red]This value cannot be empty.[/red]")
 
 
+def _parse_auth0_env_block(text: str) -> dict[str, str]:
+    """Extract and validate Auth0 application values from a copied .env block."""
+    values: dict[str, str] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key not in {"AUTH0_DOMAIN", "AUTH0_CLIENT_ID", "AUTH0_CLIENT_SECRET"}:
+            continue
+        values[key] = value.strip().strip('"').strip("'")
+
+    missing = [
+        key for key in ("AUTH0_DOMAIN", "AUTH0_CLIENT_ID", "AUTH0_CLIENT_SECRET")
+        if not values.get(key)
+    ]
+    if missing:
+        raise ValueError("Missing required value(s): " + ", ".join(missing))
+
+    secret = values["AUTH0_CLIENT_SECRET"]
+    if "MASKED" in secret.upper() or "*" in secret:
+        raise ValueError(
+            "AUTH0_CLIENT_SECRET is masked. In Auth0, reveal/copy the real Client Secret "
+            "from Application > Settings and try again."
+        )
+
+    values["AUTH0_DOMAIN"] = _validate_hostname(values["AUTH0_DOMAIN"])
+    return values
+
+
+def _read_clipboard() -> str:
+    """Read text from a supported desktop clipboard without displaying secrets."""
+    commands = (
+        ("pbpaste",),
+        ("wl-paste", "--no-newline"),
+        ("xclip", "-selection", "clipboard", "-o"),
+        ("xsel", "--clipboard", "--output"),
+    )
+    for command in commands:
+        if not shutil.which(command[0]):
+            continue
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout
+    raise RuntimeError(
+        "Clipboard reading is unavailable. Choose the paste or manual-entry option instead."
+    )
+
+
+def _ask_auth0_application_values() -> dict[str, str]:
+    """Collect Auth0 application values by clipboard, block paste, or manual entry."""
+    console.print("  [bold]1[/bold] Read the copied Auth0 .env block from clipboard [green](recommended)[/green]")
+    console.print("  [bold]2[/bold] Paste the Auth0 .env block in the terminal")
+    console.print("  [bold]3[/bold] Enter Domain, Client ID, and Client Secret separately")
+
+    while True:
+        choice = Prompt.ask("How would you like to add the Auth0 values?", choices=["1", "2", "3"], default="1")
+        if choice == "3":
+            domain = _ask_hostname("AUTH0_DOMAIN (for example your-tenant.eu.auth0.com)")
+            return {
+                "AUTH0_DOMAIN": domain,
+                "AUTH0_CLIENT_ID": _ask_required("AUTH0_CLIENT_ID (Application Settings > Client ID)"),
+                "AUTH0_CLIENT_SECRET": _ask_required(
+                    "AUTH0_CLIENT_SECRET (Application Settings > Client Secret)",
+                    password=True,
+                ),
+            }
+
+        if choice == "1":
+            try:
+                block = _read_clipboard()
+            except RuntimeError as exc:
+                console.print(f"[red]{exc}[/red]")
+                continue
+        else:
+            console.print(
+                "Paste the complete block below. On a new line, type [bold]END[/bold] and press Enter."
+            )
+            lines: list[str] = []
+            while True:
+                line = console.input()
+                if line.strip().upper() == "END":
+                    break
+                lines.append(line)
+            block = "\n".join(lines)
+
+        try:
+            values = _parse_auth0_env_block(block)
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            console.print("Copy the block again, or choose option 3 to enter the values manually.")
+            continue
+
+        console.print("[green]✓ Auth0 Domain, Client ID, and Client Secret were imported.[/green]")
+        return values
+
+
 def ask_workspace_dir() -> Path:
     console.print(Panel(
         "Choose the folder the AI should work in. The built-in file tools cannot leave this folder.\n\n"
@@ -174,26 +284,60 @@ def _check_auth0_domain(domain: str) -> bool:
         return False
 
 
+def _auth0_settings(public_origin: str) -> tuple[tuple[str, str], ...]:
+    """Return the exact Auth0 dashboard values for this FastMCP deployment."""
+    origin = public_origin.rstrip("/")
+    return (
+        ("Application Ownership", "First-party"),
+        ("Application Type", "Regular Web Application"),
+        ("Application Login URI", "Leave blank"),
+        ("Allowed Callback URLs", f"{origin}/auth/callback"),
+        ("Allowed Logout URLs", origin),
+        ("Allowed Web Origins", origin),
+        ("Allowed Origins (CORS)", origin),
+        ("Allow Cross-Origin Authentication", "Off / disabled"),
+        ("Cross-Origin Verification Fallback URL", "Leave blank"),
+        ("API Identifier / Audience", f"{origin}/"),
+        ("Signing Algorithm", "RS256"),
+        ("MCP endpoint (for AI clients)", f"{origin}/mcp"),
+    )
+
+
+def _show_auth0_settings(public_origin: str) -> None:
+    table = Table(title="Values to enter in Auth0", show_header=True, header_style="bold cyan")
+    table.add_column("Auth0 field", style="bold")
+    table.add_column("Value", overflow="fold")
+    for field, value in _auth0_settings(public_origin):
+        table.add_row(field, value)
+    console.print(table)
+
+
 def ask_auth0(default_audience: str) -> Optional[dict[str, str]]:
+    public_origin = default_audience.rstrip("/")
     console.print(Panel(
         "1. Open [link=https://auth0.com/]https://auth0.com/[/link], create an account, and open Dashboard.\n"
         "2. Go to [bold]Applications > APIs > Create API[/bold]. Give it a name and use the suggested "
         "audience shown below as its Identifier.\n"
         "3. Go to [bold]Applications > Applications > Create Application[/bold], choose "
         "[bold]Regular Web Application[/bold].\n"
-        "4. Open that application's [bold]Settings[/bold]. Copy Domain, Client ID, and Client Secret.\n"
-        "5. Paste those values here. The Client Secret is hidden while you type.\n\n"
-        f"Suggested API Identifier / audience: [cyan]{default_audience}[/cyan]\n\n"
+        "4. On Auth0's [bold]Integrate into your application[/bold] page, click [bold]Copy[/bold] "
+        "above the .env block. The wizard can read it directly from your clipboard.\n"
+        "5. If the secret says MASKED, open the application's [bold]Settings[/bold] page and copy "
+        "the real Client Secret instead.\n"
+        "6. In the application's [bold]Settings[/bold], enter the exact values shown below. "
+        "Do not enter Claude, ChatGPT, or Grok callback URLs in Auth0; FastMCP handles those "
+        "client redirects through the MCP registration flow.\n"
+        "7. Click [bold]Save Changes[/bold] after entering the values.\n\n"
+        "Auth0's AUTH0_SECRET, APP_BASE_URL and PORT quickstart values belong to its sample "
+        "web application and are not used by this MCP server.\n\n"
         "Never publish the Client Secret or commit the generated .env file to Git.",
         title="Auth0 required for remote access"))
+    _show_auth0_settings(public_origin)
     if not Confirm.ask("Do you have these Auth0 values ready?", default=False):
         return None
+    application_values = _ask_auth0_application_values()
+    domain = application_values["AUTH0_DOMAIN"]
     while True:
-        try:
-            domain = _validate_hostname(Prompt.ask("AUTH0_DOMAIN (for example your-tenant.eu.auth0.com)"))
-        except ValueError as exc:
-            console.print(f"[red]{exc}[/red]")
-            continue
         with console.status(f"Checking {domain}..."):
             reachable = _check_auth0_domain(domain)
         if reachable:
@@ -201,15 +345,10 @@ def ask_auth0(default_audience: str) -> Optional[dict[str, str]]:
             break
         if Confirm.ask(f"[yellow]Couldn't verify {domain}. Use it anyway?[/yellow]", default=False):
             break
-    client_id = _ask_required("AUTH0_CLIENT_ID (Application Settings > Client ID)")
-    client_secret = _ask_required(
-        "AUTH0_CLIENT_SECRET (Application Settings > Client Secret)", password=True
-    )
     audience = _ask_required(
         "AUTH0_AUDIENCE (API Settings > Identifier)", default=default_audience
     )
-    return {"AUTH0_DOMAIN": domain, "AUTH0_CLIENT_ID": client_id,
-            "AUTH0_CLIENT_SECRET": client_secret, "AUTH0_AUDIENCE": audience}
+    return {**application_values, "AUTH0_AUDIENCE": audience}
 
 
 def write_env(path: Path, values: dict[str, str]) -> None:
