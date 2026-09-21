@@ -48,13 +48,17 @@ The workspace boundary applies to the file tools. It does **not** sandbox `run_c
 pip install universal-host-manager-mcp
 ```
 
+Next: run `uhm-setup` to generate your `.env` — see [Configure](#configure) below.
+
 ### uv / pipx
 
 Without polluting a project environment:
 
 ```bash
-uvx universal-host-manager-mcp
+uvx --from universal-host-manager-mcp uhm-setup
 ```
+
+This installs into a throwaway environment, runs the setup wizard, and writes `.env` in the current directory. From then on, run the server itself the same way: `uvx universal-host-manager-mcp`.
 
 ### From source (for development)
 
@@ -64,8 +68,9 @@ cd universal-host-manager-mcp
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
-cp .env.example .env
 ```
+
+Next: run `uhm-setup` to generate your `.env` — see [Configure](#configure) below.
 
 ### Configure
 
