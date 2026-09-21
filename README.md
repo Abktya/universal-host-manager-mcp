@@ -81,7 +81,34 @@ The easiest way is the interactive setup wizard, installed alongside the server:
 uhm-setup
 ```
 
-It asks for your workspace directory (offering to create it, and warning before pointing it at a broad system or home directory), walks you through picking a networking method (Cloudflare Tunnel, ngrok's free static domain, or your own URL), checks that your Auth0 tenant domain actually resolves, and writes a `.env` file with `600` permissions in the current directory — backing up any existing one to `.env.bak` first.
+Run it from the directory where you want to keep the configuration. The server must later be started from that same directory so it can find `.env`.
+
+For a first test, choose **1 — Local-only test**. Press Enter to accept the port `8765`; the port prompt expects a number, not `y` or `n`. This mode:
+
+- creates a separate `workspace` directory by default;
+- listens only on `127.0.0.1`, so other computers cannot connect;
+- requires no domain, tunnel, or Auth0 account;
+- enables unauthenticated access only for that local test.
+
+The wizard also offers Cloudflare Tunnel, an ngrok static domain, and an existing HTTPS URL for remote use. Remote modes require Auth0 and will not write a misleading, unusable configuration if Auth0 is skipped. It validates domains and URLs, then writes `.env` with `600` permissions—backing up an existing file to `.env.bak` first.
+
+If a virtual environment is active, install and run both commands through that environment:
+
+```bash
+python -m pip install universal-host-manager-mcp
+uhm-setup
+universal-host-manager-mcp
+```
+
+To verify that the command belongs to the active environment on macOS/Linux:
+
+```bash
+command -v uhm-setup
+command -v universal-host-manager-mcp
+python -m pip show universal-host-manager-mcp
+```
+
+The first two paths should normally point inside `.venv/bin`. If they point to `/opt/homebrew/bin` while a virtual environment is active, reinstall with `python -m pip install universal-host-manager-mcp`.
 
 Prefer to do it by hand? Create a `.env` file (copy `.env.example` if you installed from source) with an explicitly restricted workspace:
 
@@ -103,13 +130,14 @@ Never commit `.env`.
 
 This project uses FastMCP's `Auth0Provider` fixed-client OAuth integration.
 
-1. In Auth0, create an API.
-2. Use your public MCP URL as its identifier/audience, for example `https://mcp.example.com/`.
-3. Create a Regular Web Application.
-4. Put its domain, client ID and client secret in `.env`.
-5. Add only the callback URLs required by your MCP clients to the Auth0 application's allowed callback URLs.
-6. Set the application's allowed web origins and logout URLs as required by your clients.
-7. Keep RS256 signing enabled.
+1. Open [auth0.com](https://auth0.com/), create an account, and open the Auth0 Dashboard.
+2. Go to **Applications → APIs → Create API**.
+3. Use your public MCP URL as its **Identifier** (audience), for example `https://mcp.example.com/`. Keep **RS256** as the signing algorithm.
+4. Go to **Applications → Applications → Create Application**, enter a name, select **Regular Web Application**, and create it.
+5. Open the new application's **Settings** tab. Copy **Domain**, **Client ID**, and **Client Secret** into the matching wizard prompts. Copy the API's **Identifier** into `AUTH0_AUDIENCE`.
+6. Never share the Client Secret or commit `.env` to Git.
+7. Add only the callback URLs required by your MCP clients to the Auth0 application's allowed callback URLs.
+8. Set the application's allowed web origins and logout URLs as required by your clients.
 
 FastMCP also supports an Auth0 MCP-native/DCR path through `Auth0MCPProvider`. This repository currently uses the manually managed, fixed-client `Auth0Provider` path.
 

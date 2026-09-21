@@ -21,7 +21,10 @@ from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.auth0 import Auth0Provider
 
-load_dotenv()
+# python-dotenv's automatic discovery starts from the caller's source file in
+# some versions.  The setup wizard deliberately writes .env to the directory
+# where it is run, so load that exact, documented location.
+load_dotenv(dotenv_path=Path.cwd() / ".env")
 
 # FastMCP normally makes an outbound call to PyPI on every startup to check
 # for a newer release (cached 12h, via fastmcp.utilities.version_check). Skip
