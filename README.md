@@ -158,6 +158,36 @@ https://mcp.example.com/mcp
 
 Set `MCP_BASE_URL=https://mcp.example.com`; do not include `/mcp` in `MCP_BASE_URL`.
 
+## No domain? Use ngrok's free static domain
+
+Auth0 OAuth needs a stable HTTPS URL, but you don't need to own a domain to get one. Unlike ngrok's old random URLs (which changed every restart) or Cloudflare's login-free [quick tunnels](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) (same problem), ngrok's free tier includes **one static subdomain per account** that never changes, at no cost.
+
+1. Create a free account at [ngrok.com](https://ngrok.com) and install the `ngrok` CLI.
+2. Add your auth token (shown on your ngrok dashboard):
+
+   ```bash
+   ngrok config add-authtoken <your-token>
+   ```
+
+3. Claim your free static domain from the ngrok dashboard (**Domains** → **New Domain**). You'll get something like `your-name.ngrok-free.app`.
+4. Start the tunnel, pointing at the port the server listens on:
+
+   ```bash
+   ngrok http --url=your-name.ngrok-free.app 8765
+   ```
+
+   Leave this running in a terminal, `tmux`/`screen` session, or as its own systemd service alongside the one in [Background service](#background-service).
+5. Set `MCP_BASE_URL=https://your-name.ngrok-free.app` in `.env` (keep `HOST=127.0.0.1`, exactly as with the Cloudflare Tunnel setup above — ngrok forwards to your local port, the server itself still only listens on loopback).
+6. In Auth0, add `https://your-name.ngrok-free.app` to the application's allowed callback URLs, web origins and logout URLs (see [Auth0 setup](#auth0-setup)) — you only need to do this once, since the domain is permanent.
+
+Your remote MCP URL is:
+
+```text
+https://your-name.ngrok-free.app/mcp
+```
+
+This is a good fit for personal use or a small number of clients. For production traffic at scale, ngrok's free tier applies connection/bandwidth limits — check their [pricing page](https://ngrok.com/pricing) if you outgrow it, or switch to the domain-based Cloudflare Tunnel setup above.
+
 ## AWS EC2 Deployment
 
 These steps deploy the server on an EC2 instance and expose it safely to remote MCP clients.
@@ -206,6 +236,8 @@ Auth0 OAuth requires HTTPS. Pick one option:
 **Option A — Cloudflare Tunnel (recommended, no inbound port needed)**
 
 Run the steps from the [Cloudflare Tunnel](#cloudflare-tunnel) section above, from the EC2 instance. Because the tunnel is an outbound-only connection, you don't need to open any inbound port beyond SSH, don't need an Elastic IP, and the instance can even sit in a private subnet behind a NAT gateway.
+
+Don't own a domain? Run the steps from [No domain? Use ngrok's free static domain](#no-domain-use-ngroks-free-static-domain) above instead — same outbound-only, no-inbound-port setup, just from the EC2 instance.
 
 **Option B — Application Load Balancer with an ACM certificate**
 
