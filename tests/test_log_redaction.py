@@ -5,17 +5,16 @@ icerebilir; bu yuzden LOG_COMMANDS acikca 'true' yapilmadikca komutun
 kendisi degil, sadece timeout'u loglanir.
 """
 
-from tests.conftest import call_tool
 from universal_host_manager_mcp import server
 
 
-def test_command_text_not_logged_by_default(caplog):
+def test_command_text_not_logged_by_default(caplog, call_tool):
     with caplog.at_level("INFO", logger="universal-host-manager"):
         call_tool(server.run_command, "echo cok-gizli-deger-xyz")
     assert "cok-gizli-deger-xyz" not in caplog.text
 
 
-def test_log_commands_true_includes_command_text(monkeypatch, caplog):
+def test_log_commands_true_includes_command_text(monkeypatch, caplog, call_tool):
     monkeypatch.setattr(server, "LOG_COMMANDS", True)
     with caplog.at_level("INFO", logger="universal-host-manager"):
         call_tool(server.run_command, "echo cok-gizli-deger-xyz")

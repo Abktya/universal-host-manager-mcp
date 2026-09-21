@@ -12,6 +12,8 @@ fırlar.
 import os
 import tempfile
 
+import pytest
+
 _workspace = tempfile.mkdtemp(prefix="uhm-test-workspace-")
 os.environ.setdefault("ALLOW_INSECURE_NO_AUTH", "true")
 os.environ.setdefault("MCP_WORKSPACE_DIR", _workspace)
@@ -21,14 +23,25 @@ os.environ.setdefault("LOG_COMMANDS", "false")
 os.environ.setdefault("FASTMCP_CHECK_FOR_UPDATES", "off")
 
 
-def call_tool(tool, *args, **kwargs):
-    """@mcp.tool() ile süslenmiş bir fonksiyonu sürümden bağımsız çağırır.
+@pytest.fixture
+def call_tool():
+    """@mcp.tool() ile süslenmiş bir fonksiyonu sürümden bağımsız çağıran
+    bir yardımcı döndürür.
 
     fastmcp 2.13'te @mcp.tool() bir FunctionTool nesnesi döndürür (asıl
     fonksiyona .fn üzerinden erişilir); fastmcp 3.x/4.x'te ise düz
-    fonksiyonun kendisini döndürür. Bu yardımcı, testlerin hangi
-    fastmcp sürümü kurulu olursa olsun aynı şekilde yazılabilmesini
-    sağlar.
+    fonksiyonun kendisini döndürür.
+
+    Bu bilerek "tests.conftest"ten import edilen düz bir fonksiyon değil,
+    bir pytest fixture'ı: "tests/" paketinin sys.path üzerinden import
+    edilebilir olup olmadığına bağlı değil (pytest'in kendi dependency
+    injection mekanizmasını kullanıyor), bu yüzden hem "python -m pytest"
+    hem de doğrudan "pytest" komutuyla, calisma dizininden bagimsiz
+    calisir.
     """
-    fn = getattr(tool, "fn", tool)
-    return fn(*args, **kwargs)
+
+    def _call(tool, *args, **kwargs):
+        fn = getattr(tool, "fn", tool)
+        return fn(*args, **kwargs)
+
+    return _call
