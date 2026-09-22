@@ -386,22 +386,32 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.user.mcpmanager.plis
 launchctl kickstart -k gui/$(id -u)/com.user.mcpmanager
 ```
 
-### macOS permissions (do this before going remote)
+### macOS Remote Access Readiness Test
 
-macOS ties Full Disk Access, Automation and similar permissions to the exact
-binary path making the request, not to the script — and grants them only
-through an interactive System Settings click, never via script or CLI (this
-is intentional on Apple's part). Since this server is meant to be driven
-remotely, nobody may be there to click an "Allow" dialog when one appears.
+For a remote macOS installation, `uhm-setup` ends by asking:
 
-`uhm-setup` prints a one-time checklist for this (and can open the right
-System Settings pane for you) whenever it detects macOS and a remote setup.
-The short version: find the exact path the server runs as (the wizard prints
-it, or run `which universal-host-manager-mcp` inside the same environment),
-grant it Full Disk Access once in **System Settings > Privacy & Security >
-Full Disk Access**, and keep launching the server from that same
-installation — a new venv, Python upgrade or reinstall elsewhere is a new
-path to macOS and needs the grant again.
+```text
+Run macOS Remote Access Readiness Test now? [Y/n]
+```
+
+Run this while you are physically beside the Mac. Select only the capabilities
+you expect to use remotely. The wizard can test workspace read/write access,
+trigger a read-only Google Chrome Automation request, and open the exact macOS
+Privacy & Security panes for protected files, Accessibility, and Screen
+Recording. Opening an application or an ordinary URL does not itself require
+an extra privacy permission.
+
+macOS deliberately requires the user to approve TCC privacy prompts. The wizard
+does not bypass or click them. It shows the exact server executable path, asks
+you to approve each selected permission, and prints a readiness report. If a
+permission is not prepared before unattended use, a later remote task can stop
+at a dialog that requires somebody at the Mac.
+
+Full Disk Access, Automation, Accessibility, and similar grants may be tied to
+the executable or installation path involved. Recreating a virtual environment,
+switching Python versions, or reinstalling elsewhere can require approval again.
+After changing a privacy permission, restart the MCP LaunchAgent before relying
+on it remotely.
 
 ## Configuration
 

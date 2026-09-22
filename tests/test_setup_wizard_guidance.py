@@ -344,3 +344,113 @@ def test_macos_privacy_settings_prompt_accepted_opens_full_disk_access_pane(monk
         "open",
         "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
     ]
+
+
+def test_workspace_readiness_probe_reads_writes_and_cleans_up(tmp_path):
+    passed, details = setup_wizard._test_workspace_access(tmp_path)
+
+    assert passed is True
+    assert "Read, write, and delete" in details
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_macos_readiness_declined_stops_before_capability_questions(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(setup_wizard.Confirm, "ask", lambda *a, **k: False)
+    called = []
+    monkeypatch.setattr(
+        setup_wizard,
+        "_ask_macos_readiness_capabilities",
+        lambda: called.append(True),
+    )
+
+    assert setup_wizard._run_macos_readiness_test(
+        tmp_path, "/venv/bin/universal-host-manager-mcp"
+    ) is None
+    assert called == []
+
+
+def test_macos_capabilities_are_asked_separately(monkeypatch):
+    answers = iter((True, True, False, True, False))
+    prompts = []
+
+    def answer(prompt, **kwargs):
+        prompts.append(prompt)
+        return next(answers)
+
+    monkeypatch.setattr(setup_wizard.Confirm, "ask", answer)
+
+    selected = setup_wizard._ask_macos_readiness_capabilities()
+
+    assert selected == {
+        "workspace": True,
+        "full_disk_access": True,
+        "chrome_automation": False,
+        "accessibility": True,
+        "screen_recording": False,
+    }
+    assert len(prompts) == 5
+
+
+def test_open_macos_privacy_pane_uses_requested_panel(monkeypatch):
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(setup_wizard.subprocess, "run", fake_run)
+
+    assert setup_wizard._open_macos_privacy_pane("accessibility") is True
+    assert calls[0][-1].endswith("Privacy_Accessibility")
+
+
+def test_chrome_automation_uses_read_only_apple_event(monkeypatch):
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout="Google", stderr="")
+
+    monkeypatch.setattr(setup_wizard.subprocess, "run", fake_run)
+
+    passed, details = setup_wizard._test_chrome_automation(
+        "/venv/bin/universal-host-manager-mcp"
+    )
+
+    assert passed is True
+    assert "read-only" in details
+    assert calls[0] == ["open", "-Ra", "Google Chrome"]
+    assert calls[1][0:2] == ["osascript", "-e"]
+
+
+def test_readiness_runs_only_selected_capabilities(tmp_path, monkeypatch):
+    monkeypatch.setattr(setup_wizard.Confirm, "ask", lambda *a, **k: True)
+    monkeypatch.setattr(
+        setup_wizard,
+        "_ask_macos_readiness_capabilities",
+        lambda: {
+            "workspace": True,
+            "full_disk_access": False,
+            "chrome_automation": False,
+            "accessibility": False,
+            "screen_recording": False,
+        },
+    )
+    monkeypatch.setattr(
+        setup_wizard,
+        "_test_workspace_access",
+        lambda workspace: (True, "ok"),
+    )
+    captured = []
+    monkeypatch.setattr(
+        setup_wizard,
+        "_show_macos_readiness_report",
+        lambda results: captured.extend(results) or True,
+    )
+
+    assert setup_wizard._run_macos_readiness_test(
+        tmp_path, "/venv/bin/universal-host-manager-mcp"
+    ) is True
+    assert captured == [("Workspace files", True, "ok")]

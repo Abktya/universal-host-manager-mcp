@@ -651,8 +651,10 @@ def _macos_permission_steps(server_path: str) -> tuple[str, ...]:
     goruntulendiginde tiklayacak kimse olmayabilir -- bu yuzden bunlarin
     kuruluma once, elle, tek seferde verilmesi onerilir.
     """
+    python_path = str(Path(sys.executable).resolve())
     return (
-        f"The server always runs as this exact path: {server_path}",
+        f"Server command path: {server_path}",
+        f"Python interpreter used by this installation: {python_path}",
         "Grant Full Disk Access to this exact path once, now: System Settings > "
         "Privacy & Security > Full Disk Access > click '+' and add it. This covers "
         "commands that touch Desktop, Documents, Downloads, Photos, Mail, or other "
@@ -687,6 +689,255 @@ def _offer_to_open_macos_privacy_settings() -> None:
     except OSError:
         console.print("[yellow]Could not open System Settings automatically; open it by hand.[/yellow]")
 
+
+_MACOS_PRIVACY_PANES = {
+    "full_disk_access": "Privacy_AllFiles",
+    "automation": "Privacy_Automation",
+    "accessibility": "Privacy_Accessibility",
+    "screen_recording": "Privacy_ScreenCapture",
+}
+
+
+def _open_macos_privacy_pane(pane: str) -> bool:
+    """Open one macOS Privacy & Security pane without attempting to bypass TCC."""
+    pane_id = _MACOS_PRIVACY_PANES[pane]
+    try:
+        result = subprocess.run(
+            [
+                "open",
+                "x-apple.systempreferences:com.apple.preference.security?"
+                + pane_id,
+            ],
+            check=False,
+        )
+    except OSError:
+        return False
+    return result.returncode == 0
+
+
+def _test_workspace_access(workspace: Path) -> tuple[bool, str]:
+    """Perform a harmless create/read/delete check inside the configured workspace."""
+    probe = workspace / f".uhm-readiness-{os.getpid()}"
+    try:
+        probe.write_text("Universal Host Manager readiness test\n", encoding="utf-8")
+        if probe.read_text(encoding="utf-8") != "Universal Host Manager readiness test\n":
+            return False, "The test file was written but its contents could not be verified."
+        return True, "Read, write, and delete access works."
+    except OSError as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+    finally:
+        try:
+            probe.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _ask_macos_readiness_capabilities() -> dict[str, bool]:
+    """Ask only for capabilities the user expects to use remotely."""
+    console.print(Panel(
+        "Select only the capabilities you plan to use remotely. macOS grants "
+        "these permissions interactively and does not allow this wizard to click "
+        "Allow on your behalf.\n\n"
+        "[bold]Opening applications and ordinary URLs does not require an extra "
+        "privacy permission.[/bold] Chrome Automation means controlling Chrome "
+        "with AppleScript, not merely opening google.com.",
+        title="Choose remote capabilities",
+    ))
+    return {
+        "workspace": Confirm.ask(
+            "Test read/write access to the configured workspace?",
+            default=True,
+        ),
+        "full_disk_access": Confirm.ask(
+            "Will remote commands access Desktop, Documents, Downloads, Photos, "
+            "Mail, or other protected locations?",
+            default=False,
+        ),
+        "chrome_automation": Confirm.ask(
+            "Will remote commands control Google Chrome with AppleScript?",
+            default=False,
+        ),
+        "accessibility": Confirm.ask(
+            "Will remote commands control the mouse, keyboard, or app user interfaces?",
+            default=False,
+        ),
+        "screen_recording": Confirm.ask(
+            "Will remote commands capture or inspect the screen?",
+            default=False,
+        ),
+    }
+
+
+def _confirm_permission_in_settings(
+    *,
+    pane: str,
+    permission_name: str,
+    server_path: str,
+) -> tuple[bool, str]:
+    console.print(
+        f"\n[bold]{permission_name}[/bold]\n"
+        f"Server command:\n[cyan]{server_path}[/cyan]\n"
+        f"Python interpreter:\n[cyan]{Path(sys.executable).resolve()}[/cyan]\n"
+        "macOS may attribute command-line privacy access to the interpreter or "
+        "the launching application. Add the path shown by the permission prompt; "
+        "for a LaunchAgent deployment, use the Python interpreter above. "
+        "Return to this terminal after approving it. The permission cannot be "
+        "granted automatically."
+    )
+    if not _open_macos_privacy_pane(pane):
+        console.print(
+            f"[yellow]Open System Settings > Privacy & Security > "
+            f"{permission_name} manually.[/yellow]"
+        )
+    confirmed = Confirm.ask(
+        f"Have you enabled {permission_name} for the executable shown above?",
+        default=False,
+    )
+    if confirmed:
+        return True, "User confirmed the permission is enabled."
+    return False, "Not confirmed; remote tasks needing this permission may stop."
+
+
+def _test_chrome_automation(server_path: str) -> tuple[bool, str]:
+    """Trigger Chrome's one-time Apple Events prompt with a read-only request."""
+    try:
+        chrome_check = subprocess.run(
+            ["open", "-Ra", "Google Chrome"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        return False, f"Could not look for Google Chrome: {exc}"
+    if chrome_check.returncode != 0:
+        return False, "Google Chrome is not installed or could not be found."
+
+    console.print(
+        "\n[bold]Google Chrome Automation[/bold]\n"
+        "A read-only AppleScript will ask Chrome for the active tab title. "
+        "Approve the macOS Automation dialog if it appears.\n"
+        f"Server command: [cyan]{server_path}[/cyan]\n"
+        f"Python interpreter: [cyan]{Path(sys.executable).resolve()}[/cyan]\n"
+        "[yellow]This probe is started by the wizard. After installing the "
+        "LaunchAgent, run one real Chrome Automation command through MCP while "
+        "you are still beside the Mac, because macOS can track the launching "
+        "process separately.[/yellow]"
+    )
+    script = (
+        'tell application "Google Chrome"\n'
+        "launch\n"
+        'if (count of windows) is 0 then make new window\n'
+        "return title of active tab of front window\n"
+        "end tell"
+    )
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        _open_macos_privacy_pane("automation")
+        return False, f"Automation test could not complete: {exc}"
+
+    if result.returncode == 0:
+        return True, "Chrome accepted the read-only AppleScript request."
+
+    _open_macos_privacy_pane("automation")
+    detail = (result.stderr or result.stdout).strip()
+    if len(detail) > 240:
+        detail = detail[:237] + "..."
+    return False, detail or "Chrome Automation was denied or not completed."
+
+
+def _show_macos_readiness_report(
+    results: list[tuple[str, bool, str]],
+) -> bool:
+    table = Table(
+        title="macOS Remote Access Readiness Report",
+        show_header=True,
+        header_style="bold cyan",
+    )
+    table.add_column("Capability", style="bold")
+    table.add_column("Status")
+    table.add_column("Details", overflow="fold")
+    ready = True
+    for capability, passed, details in results:
+        status = "[green]READY[/green]" if passed else "[red]ACTION REQUIRED[/red]"
+        table.add_row(capability, status, details)
+        ready = ready and passed
+    console.print(table)
+    if ready:
+        console.print(
+            "[bold green]Remote readiness: READY for every selected capability.[/bold green]"
+        )
+    else:
+        console.print(
+            "[bold yellow]Remote readiness: NOT READY. Complete the actions above "
+            "while you are beside the Mac, then run uhm-setup again to retest.[/bold yellow]"
+        )
+    console.print(
+        "[dim]After changing a macOS privacy permission, restart the MCP "
+        "LaunchAgent before relying on it remotely.[/dim]"
+    )
+    return ready
+
+
+def _run_macos_readiness_test(workspace: Path, server_path: str) -> Optional[bool]:
+    """Interactively prepare selected macOS permissions before unattended use."""
+    if not Confirm.ask(
+        "Run macOS Remote Access Readiness Test now?",
+        default=True,
+    ):
+        console.print(
+            "[yellow]Readiness test skipped. Run uhm-setup again while beside the "
+            "Mac before depending on protected features remotely.[/yellow]"
+        )
+        return None
+
+    selected = _ask_macos_readiness_capabilities()
+    results: list[tuple[str, bool, str]] = []
+
+    if selected["workspace"]:
+        passed, details = _test_workspace_access(workspace)
+        results.append(("Workspace files", passed, details))
+
+    if selected["full_disk_access"]:
+        passed, details = _confirm_permission_in_settings(
+            pane="full_disk_access",
+            permission_name="Full Disk Access",
+            server_path=server_path,
+        )
+        results.append(("Protected files", passed, details))
+
+    if selected["chrome_automation"]:
+        passed, details = _test_chrome_automation(server_path)
+        results.append(("Chrome Automation", passed, details))
+
+    if selected["accessibility"]:
+        passed, details = _confirm_permission_in_settings(
+            pane="accessibility",
+            permission_name="Accessibility",
+            server_path=server_path,
+        )
+        results.append(("Mouse, keyboard, and UI control", passed, details))
+
+    if selected["screen_recording"]:
+        passed, details = _confirm_permission_in_settings(
+            pane="screen_recording",
+            permission_name="Screen Recording",
+            server_path=server_path,
+        )
+        results.append(("Screen capture", passed, details))
+
+    if not results:
+        console.print(
+            "[yellow]No capabilities were selected, so no permission checks were run.[/yellow]"
+        )
+        return True
+    return _show_macos_readiness_report(results)
 
 def _show_summary(env_path: Path, workspace: Path, network: NetworkConfig, *, auth_configured: bool) -> None:
     lines = ["[bold green]Setup complete[/bold green]", "", f"Mode: [cyan]{network.mode}[/cyan]",
@@ -756,13 +1007,13 @@ def main() -> None:
         values.update(auth0)
     env_path = config_dir / ".env"
     write_env(env_path, values)
+    _show_summary(env_path, workspace, network, auth_configured=auth0 is not None)
     if sys.platform == "darwin" and network.remote:
         console.print(Panel.fit(
             "\n".join(_macos_permission_steps(_server_command())),
-            title="macOS permissions (one-time, do this now)",
+            title="macOS permissions before unattended remote use",
         ))
-        _offer_to_open_macos_privacy_settings()
-    _show_summary(env_path, workspace, network, auth_configured=auth0 is not None)
+        _run_macos_readiness_test(workspace, _server_command())
 
 
 if __name__ == "__main__":
