@@ -256,11 +256,11 @@ def _cloudflare_follow_up(hostname: str, port: int) -> tuple[str, ...]:
     return (
         "Install cloudflared: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/",
         "macOS with Homebrew: brew install cloudflared",
-        "Ubuntu/Debian: follow the Cloudflare package-repository commands on the download page.",
+        "Linux: install cloudflared using the official package-repository commands on the download page.",
         "Authenticate: cloudflared tunnel login",
         "Create the tunnel: cloudflared tunnel create universal-host-manager-mcp",
         f"Create DNS routing: cloudflared tunnel route dns universal-host-manager-mcp {hostname}",
-        "Create ~/.cloudflared/config.yml using the configuration shown in the README.",
+        "Create ~/.cloudflared/config.yml and route the hostname to http://127.0.0.1:{port} as shown in the README.",
         "Start the tunnel in a second terminal: cloudflared tunnel run universal-host-manager-mcp",
         "Keep both the MCP server terminal and the cloudflared terminal running.",
     )
@@ -272,7 +272,7 @@ def _ask_autostart_target(tunnel_name: str) -> Optional[str]:
         default=False,
     ):
         return None
-    console.print("The wizard will only print the commands; review and run them after setup.")
+    console.print("The wizard will create uhm-enable-autostart.sh; review it, then run one command after setup.")
     console.print("  [bold]1[/bold] Linux server (systemd user services)")
     console.print("  [bold]2[/bold] macOS (LaunchAgents)")
     default_target = "1" if sys.platform.startswith("linux") else "2"
@@ -286,7 +286,8 @@ def _ask_autostart_target(tunnel_name: str) -> Optional[str]:
 
 def _ngrok_follow_up(hostname: str, port: int) -> tuple[str, ...]:
     return (
-        "Install ngrok on Ubuntu: sudo snap install ngrok",
+        "Install ngrok on macOS: brew install ngrok/ngrok/ngrok",
+        "Install ngrok on Linux: use https://ngrok.com/download (Ubuntu can use: sudo snap install ngrok)",
         "Open https://dashboard.ngrok.com/get-started/your-authtoken and sign in.",
         "Copy and run: ngrok config add-authtoken YOUR_NGROK_TOKEN",
         "Replace YOUR_NGROK_TOKEN with the authtoken from the dashboard; do not use the domain ID and never share the token.",
@@ -302,7 +303,7 @@ def _cloudflare_autostart_steps(
 ) -> tuple[str, ...]:
     config_path = str(config_dir)
     if target == "linux":
-        script = f"""Copy this whole block to keep BOTH services running on Linux:
+        script = f"""#!/bin/sh\nset -eu\n# Create and enable both services on Linux.
 CLOUDFLARED_BIN="$(command -v cloudflared)"
 mkdir -p "$HOME/.config/systemd/user"
 cat > "$HOME/.config/systemd/user/universal-host-manager-mcp.service" <<EOF
@@ -339,7 +340,7 @@ systemctl --user enable --now universal-host-manager-mcp.service universal-host-
 sudo loginctl enable-linger "$USER"
 systemctl --user status universal-host-manager-mcp.service universal-host-manager-cloudflared.service --no-pager"""
     else:
-        script = f"""Copy this whole block to keep BOTH services running on macOS:
+        script = f"""#!/bin/sh\nset -eu\n# Create and enable both services on macOS.
 CLOUDFLARED_BIN="$(command -v cloudflared)"
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
 cat > "$HOME/Library/LaunchAgents/io.bkty.universal-host-manager-mcp.plist" <<EOF
@@ -384,7 +385,7 @@ def _remote_autostart_steps(
 ) -> tuple[str, ...]:
     config_path = str(config_dir)
     if target == "linux":
-        script = f"""After saving the ngrok authtoken, copy this whole block to keep BOTH services running on Linux:
+        script = f"""#!/bin/sh\nset -eu\n# Run after saving the ngrok authtoken; create both Linux services.
 NGROK_BIN="$(command -v ngrok)"
 mkdir -p "$HOME/.config/systemd/user"
 cat > "$HOME/.config/systemd/user/universal-host-manager-mcp.service" <<EOF
@@ -421,7 +422,7 @@ systemctl --user enable --now universal-host-manager-mcp.service universal-host-
 sudo loginctl enable-linger "$USER"
 systemctl --user status universal-host-manager-mcp.service universal-host-manager-ngrok.service --no-pager"""
     else:
-        script = f"""After saving the ngrok authtoken, copy this whole block to keep BOTH services running on macOS:
+        script = f"""#!/bin/sh\nset -eu\n# Run after saving the ngrok authtoken; create both macOS agents.
 NGROK_BIN="$(command -v ngrok)"
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
 cat > "$HOME/Library/LaunchAgents/io.bkty.universal-host-manager-mcp.plist" <<EOF
@@ -546,6 +547,7 @@ def _auth0_settings(public_origin: str) -> tuple[tuple[str, str], ...]:
         ("Cross-Origin Verification Fallback URL", "Leave blank"),
         ("API Identifier / Audience", f"{origin}/"),
         ("Signing Algorithm", "RS256"),
+        ("Application > API Access", "Enable User-delegated Access for this API"),
         ("MCP endpoint (for AI clients)", f"{origin}/mcp"),
     )
 
@@ -564,17 +566,22 @@ def ask_auth0(default_audience: str) -> Optional[dict[str, str]]:
     console.print(Panel(
         "1. Open [link=https://auth0.com/]https://auth0.com/[/link], create an account, and open Dashboard.\n"
         "2. Go to [bold]Applications > APIs > Create API[/bold]. Give it a name and use the suggested "
-        "audience shown below as its Identifier.\n"
+        "Audience shown below as its Identifier character-for-character (including the trailing /), and select RS256.\n"
         "3. Go to [bold]Applications > Applications > Create Application[/bold], choose "
         "[bold]Regular Web Application[/bold].\n"
-        "4. On Auth0's [bold]Integrate into your application[/bold] page, click [bold]Copy[/bold] "
+        "4. Set [bold]Application Ownership[/bold] to [bold]First-party[/bold]. Under "
+        "[bold]Application > API Access[/bold], enable [bold]User-delegated Access[/bold] for the API you "
+        "created in step 2.\n"
+        "5. On Auth0's [bold]Integrate into your application[/bold] page, click [bold]Copy[/bold] "
         "above the .env block. The wizard can read it directly from your clipboard.\n"
-        "5. If the secret says MASKED, open the application's [bold]Settings[/bold] page and copy "
+        "6. If the secret says MASKED, open the application's [bold]Settings[/bold] page and copy "
         "the real Client Secret instead.\n"
-        "6. In the application's [bold]Settings[/bold], enter the exact values shown below. "
+        "7. In the application's [bold]Settings[/bold], enter the exact values shown below. "
         "Do not enter Claude, ChatGPT, or Grok callback URLs in Auth0; FastMCP handles those "
         "client redirects through the MCP registration flow.\n"
-        "7. Click [bold]Save Changes[/bold] after entering the values.\n\n"
+        "8. Click [bold]Save Changes[/bold] after entering the values.\n\n"
+        "Client ID identifies the Regular Web Application. Client Secret is its real, unmasked password. "
+        "Auth0 Domain is the tenant hostname. Audience is the API Identifier and must match it exactly.\n\n"
         "Auth0's AUTH0_SECRET, APP_BASE_URL and PORT quickstart values belong to its sample "
         "web application and are not used by this MCP server.\n\n"
         "Never publish the Client Secret or commit the generated .env file to Git.",
@@ -595,7 +602,29 @@ def ask_auth0(default_audience: str) -> Optional[dict[str, str]]:
     audience = _ask_required(
         "AUTH0_AUDIENCE (API Settings > Identifier)", default=default_audience
     )
+    if audience != default_audience:
+        console.print(
+            "[bold yellow]AUTH0_AUDIENCE must exactly match the API Identifier and "
+            f"{default_audience!r}.[/bold yellow]"
+        )
     return {**application_values, "AUTH0_AUDIENCE": audience}
+
+
+def _write_autostart_script(env_path: Path, network: NetworkConfig, hostname: str) -> Path:
+    """Create the executable installer which writes and enables the selected service files."""
+    if network.mode == "Cloudflare Tunnel":
+        steps = _cloudflare_autostart_steps(
+            network.autostart_target or "linux", env_path.parent, _server_command()
+        )
+    else:
+        steps = _remote_autostart_steps(
+            hostname, network.port, network.autostart_target or "linux",
+            env_path.parent, _server_command(),
+        )
+    path = env_path.parent / "uhm-enable-autostart.sh"
+    path.write_text("\n".join(steps).rstrip() + "\n", encoding="utf-8")
+    os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+    return path
 
 
 def write_env(path: Path, values: dict[str, str]) -> None:
@@ -611,6 +640,52 @@ def write_env(path: Path, values: dict[str, str]) -> None:
 def _server_command() -> str:
     candidate = Path(sys.executable).parent / "universal-host-manager-mcp"
     return str(candidate) if candidate.exists() else (shutil.which("universal-host-manager-mcp") or "universal-host-manager-mcp")
+
+
+def _macos_permission_steps(server_path: str) -> tuple[str, ...]:
+    """macOS izinleri (Full Disk Access, Automation, Accessibility) TCC
+    tarafindan calisan surecin TAM binary yoluna gore takip edilir, script'e
+    gore degil -- ve Apple bunlari kasitli olarak script/CLI ile programatik
+    verilemez sekilde tasarlamistir; System Settings'te elle onaylanmalari
+    gerekir. Bu sunucu uzaktan (insansiz) calisacagi icin, izin penceresi
+    goruntulendiginde tiklayacak kimse olmayabilir -- bu yuzden bunlarin
+    kuruluma once, elle, tek seferde verilmesi onerilir.
+    """
+    return (
+        f"The server always runs as this exact path: {server_path}",
+        "Grant Full Disk Access to this exact path once, now: System Settings > "
+        "Privacy & Security > Full Disk Access > click '+' and add it. This covers "
+        "commands that touch Desktop, Documents, Downloads, Photos, Mail, or other "
+        "TCC-protected locations.",
+        "If a remote command ever needs to control another app via AppleScript/"
+        "osascript, macOS will show a one-time Automation prompt for that specific "
+        "app pair; nobody may be there to click it, so test that command locally "
+        "first, before relying on it remotely.",
+        "These grants are tied to this exact path. Recreating the virtual "
+        "environment, switching Python versions, or reinstalling elsewhere counts "
+        "as a new path to macOS and asks again -- keep using this same "
+        "installation for remote/unattended use.",
+    )
+
+
+def _offer_to_open_macos_privacy_settings() -> None:
+    """Kullanicinin System Settings > Privacy & Security > Full Disk Access
+    panelini elle aramasina gerek kalmasin diye dogrudan acmayi teklif eder.
+    Yine de son onay tiklamasini kullanici yapmak zorunda -- bu adim
+    programatik olarak atlatilamaz, sadece gezinme surtunmesini azaltir.
+    """
+    if not Confirm.ask(
+        "Open System Settings > Privacy & Security > Full Disk Access now?",
+        default=True,
+    ):
+        return
+    try:
+        subprocess.run(
+            ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"],
+            check=False,
+        )
+    except OSError:
+        console.print("[yellow]Could not open System Settings automatically; open it by hand.[/yellow]")
 
 
 def _show_summary(env_path: Path, workspace: Path, network: NetworkConfig, *, auth_configured: bool) -> None:
@@ -640,22 +715,17 @@ def _show_summary(env_path: Path, workspace: Path, network: NetworkConfig, *, au
         if network.autostart_target:
             hostname = urlparse(network.base_url).hostname
             if hostname:
-                lines += ["", "Optional automatic-start commands:"]
-                if network.mode == "Cloudflare Tunnel":
-                    steps = _cloudflare_autostart_steps(
-                        network.autostart_target,
-                        env_path.parent,
-                        _server_command(),
-                    )
-                else:
-                    steps = _remote_autostart_steps(
-                        hostname,
-                        network.port,
-                        network.autostart_target,
-                        env_path.parent,
-                        _server_command(),
-                    )
-                lines += [f"[cyan]{escape(item)}[/cyan]" for item in steps]
+                script_path = _write_autostart_script(env_path, network, hostname)
+                lines += [
+                    "", f"Autostart installer created: [cyan]{script_path}[/cyan]",
+                    "Review it, then run:",
+                    f"  [cyan]{escape(shlex.quote(str(script_path)))}[/cyan]",
+                ]
+        lines += [
+            "", "Connection checks (after the server and tunnel are running):",
+            f"  [cyan]curl -i {escape(network.base_url)}/mcp[/cyan]  [dim]# expect HTTP 401[/dim]",
+            f"  [cyan]curl -i {escape(network.base_url)}/.well-known/oauth-authorization-server[/cyan]  [dim]# expect HTTP 200[/dim]",
+        ]
         lines += ["", "Then add the MCP endpoint above to ChatGPT, Claude, or another MCP client."]
     console.print(Panel.fit("\n".join(lines)))
 
@@ -686,6 +756,12 @@ def main() -> None:
         values.update(auth0)
     env_path = config_dir / ".env"
     write_env(env_path, values)
+    if sys.platform == "darwin" and network.remote:
+        console.print(Panel.fit(
+            "\n".join(_macos_permission_steps(_server_command())),
+            title="macOS permissions (one-time, do this now)",
+        ))
+        _offer_to_open_macos_privacy_settings()
     _show_summary(env_path, workspace, network, auth_configured=auth0 is not None)
 
 

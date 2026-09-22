@@ -34,6 +34,7 @@ def test_ngrok_follow_up_explains_installation_and_token_setup():
     steps = setup_wizard._ngrok_follow_up("demo.ngrok-free.dev", 8700)
     guidance = "\n".join(steps)
 
+    assert "brew install ngrok/ngrok/ngrok" in guidance
     assert "sudo snap install ngrok" in guidance
     assert "dashboard.ngrok.com/get-started/your-authtoken" in guidance
     assert "ngrok config add-authtoken YOUR_NGROK_TOKEN" in guidance
@@ -52,6 +53,7 @@ def test_linux_autostart_configures_both_ngrok_services(tmp_path):
     assert "ExecStart=/venv/bin/universal-host-manager-mcp" in script
     assert "ngrok-free.dev 8700" in script
     assert "enable-linger" in script
+    assert script.startswith("#!/bin/sh")
     assert "<<EOF" in script
 
 
@@ -123,6 +125,7 @@ def test_auth0_settings_are_derived_from_public_origin():
     assert settings["Allowed Origins (CORS)"] == "https://mcp.example.com"
     assert settings["API Identifier / Audience"] == "https://mcp.example.com/"
     assert settings["MCP endpoint (for AI clients)"] == "https://mcp.example.com/mcp"
+    assert "User-delegated Access" in settings["Application > API Access"]
 
 
 def test_auth0_guidance_shows_fastmcp_callback(monkeypatch, capsys):
@@ -297,3 +300,47 @@ def test_server_loads_env_from_launch_directory(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "9876"
+
+
+def test_autostart_script_is_executable_and_summary_uses_one_command(tmp_path, monkeypatch):
+    monkeypatch.setattr(setup_wizard, "_server_command", lambda: "/venv/bin/universal-host-manager-mcp")
+    network = setup_wizard.NetworkConfig(
+        "ngrok static domain", "https://demo.ngrok-free.dev", 8700, True,
+        autostart_target="linux",
+    )
+    path = setup_wizard._write_autostart_script(tmp_path / ".env", network, "demo.ngrok-free.dev")
+    assert path.name == "uhm-enable-autostart.sh"
+    assert path.stat().st_mode & 0o100
+    contents = path.read_text()
+    assert contents.startswith("#!/bin/sh")
+    assert "universal-host-manager-ngrok.service" in contents
+
+
+def test_macos_permission_steps_reference_exact_path_and_full_disk_access():
+    steps = setup_wizard._macos_permission_steps("/opt/venv/bin/universal-host-manager-mcp")
+    guidance = "\n".join(steps)
+
+    assert "/opt/venv/bin/universal-host-manager-mcp" in guidance
+    assert "Full Disk Access" in guidance
+    assert "Automation" in guidance
+    assert "new path to macOS" in guidance
+
+
+def test_macos_privacy_settings_prompt_declined_does_not_call_open(monkeypatch):
+    monkeypatch.setattr(setup_wizard.Confirm, "ask", lambda *a, **k: False)
+    calls = []
+    monkeypatch.setattr(setup_wizard.subprocess, "run", lambda *a, **k: calls.append(a))
+    setup_wizard._offer_to_open_macos_privacy_settings()
+    assert calls == []
+
+
+def test_macos_privacy_settings_prompt_accepted_opens_full_disk_access_pane(monkeypatch):
+    monkeypatch.setattr(setup_wizard.Confirm, "ask", lambda *a, **k: True)
+    calls = []
+    monkeypatch.setattr(setup_wizard.subprocess, "run", lambda *a, **k: calls.append(a[0]))
+    setup_wizard._offer_to_open_macos_privacy_settings()
+    assert len(calls) == 1
+    assert calls[0] == [
+        "open",
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
+    ]

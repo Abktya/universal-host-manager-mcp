@@ -7,13 +7,13 @@
     "source": "github",
     "id": "1366574690"
   },
-  "version": "0.1.10",
+  "version": "0.1.11",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "universal-host-manager-mcp",
-      "version": "0.1.10",
+      "version": "0.1.11",
       "runtimeHint": "uvx",
       "transport": {
         "type": "streamable-http",

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "universal-host-manager-mcp"
-version = "0.1.10"
+version = "0.1.11"
 description = "Cross-platform FastMCP server for authenticated remote Linux/macOS host administration"
 readme = "README.md"
 license = { file = "LICENSE" }

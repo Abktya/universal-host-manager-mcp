@@ -134,9 +134,10 @@ This project uses FastMCP's `Auth0Provider` fixed-client OAuth integration.
 2. Go to **Applications → APIs → Create API**.
 3. Use your public MCP URL as its **Identifier** (audience), for example `https://mcp.example.com/`. Keep **RS256** as the signing algorithm.
 4. Go to **Applications → Applications → Create Application**, enter a name, select **Regular Web Application**, and create it.
-5. On Auth0's **Integrate into your application** page, click **Copy** above the `.env` block. The wizard can import `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, and `AUTH0_CLIENT_SECRET` from your clipboard or from a pasted block. If Auth0 displays `MASKED`, reveal and copy the real Client Secret from the application's **Settings** tab; masked secrets are rejected.
-6. Copy the API's **Identifier** into `AUTH0_AUDIENCE` when the wizard asks for it. It is intentionally separate because Auth0's application `.env` block does not contain the API audience.
-7. In the Auth0 application's **Settings**, use the MCP server's public origin (without `/mcp`) as follows:
+5. Set **Application Ownership** to **First-party**. Open **Application > API Access**, select the API you created, and enable **User-delegated Access**.
+6. On Auth0's **Integrate into your application** page, click **Copy** above the `.env` block. The wizard can import `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, and `AUTH0_CLIENT_SECRET` from your clipboard or from a pasted block. If Auth0 displays `MASKED`, reveal and copy the real Client Secret from the application's **Settings** tab; masked secrets are rejected.
+7. Copy the API's **Identifier** into `AUTH0_AUDIENCE` when the wizard asks for it. It is intentionally separate because Auth0's application `.env` block does not contain the API audience.
+8. In the Auth0 application's **Settings**, use the MCP server's public origin (without `/mcp`) as follows:
 
    | Auth0 field | Value |
    | --- | --- |
@@ -151,9 +152,10 @@ This project uses FastMCP's `Auth0Provider` fixed-client OAuth integration.
    | Cross-Origin Verification Fallback URL | Leave blank |
    | API Identifier / Audience | `https://mcp.example.com/` |
    | Signing Algorithm | **RS256** |
+   | Application > API Access | **User-delegated Access enabled** for the created API |
    | MCP endpoint (entered in the AI client, not Auth0) | `https://mcp.example.com/mcp` |
 
-8. Save the Auth0 application settings, then run the wizard. Never share the Client Secret or commit `.env` to Git.
+9. Save the Auth0 application settings, then run the wizard. Never share the Client Secret or commit `.env` to Git.
 
 The callback above is FastMCP's fixed upstream callback. Do **not** put Claude, ChatGPT, or Grok callback URLs into Auth0: those products are downstream MCP clients and FastMCP validates their redirect URIs separately during MCP client registration. Connect each product to `https://mcp.example.com/mcp`.
 
@@ -161,7 +163,7 @@ Auth0's Python quickstart also shows `AUTH0_SECRET`, `APP_BASE_URL`, `PORT`, and
 
 Client notes:
 
-- ChatGPT supports MCP OAuth client registration with CIMD and DCR; add the public `/mcp` endpoint in ChatGPT developer mode.
+- ChatGPT supports MCP OAuth client registration with CIMD and DCR. The server allows `https://chatgpt.com/connector_platform_oauth_redirect`; add the public `/mcp` endpoint in ChatGPT developer mode.
 - Claude custom connectors accept the public `/mcp` endpoint and start OAuth when you connect.
 - Grok custom connectors accept a publicly reachable MCP server URL and complete any required authentication. Grok availability may depend on the current Grok plan and workspace controls.
 
@@ -188,6 +190,18 @@ ALLOW_INSECURE_NO_AUTH=true universal-host-manager-mcp
 ```
 
 Do not use insecure mode on a publicly reachable endpoint.
+
+After starting the server (and the tunnel for remote mode), verify it:
+
+```bash
+curl -i https://mcp.example.com/mcp
+# Expected without a token: HTTP 401
+
+curl -i https://mcp.example.com/.well-known/oauth-authorization-server
+# Expected: HTTP 200
+```
+
+The server and tunnel must remain running; closing either makes a tunneled endpoint unavailable.
 
 ## Cloudflare Tunnel
 
@@ -218,7 +232,7 @@ cloudflared tunnel ingress validate
 cloudflared tunnel run universal-host-manager-mcp
 ```
 
-Keep both `universal-host-manager-mcp` and `cloudflared` running. Closing either process takes the public endpoint offline. The setup wizard can optionally print Linux systemd-user or macOS LaunchAgent commands for both processes.
+Keep both `universal-host-manager-mcp` and `cloudflared` running. Closing either process takes the public endpoint offline. The setup wizard can create an executable `uhm-enable-autostart.sh` installer. It writes Linux systemd-user services or macOS LaunchAgents for both processes and shows one command to run.
 
 Your remote MCP URL will be:
 
@@ -232,7 +246,7 @@ Set `MCP_BASE_URL=https://mcp.example.com`; do not include `/mcp` in `MCP_BASE_U
 
 Auth0 OAuth needs a stable HTTPS URL, but you don't need to own a domain to get one. Unlike ngrok's old random URLs (which changed every restart) or Cloudflare's login-free [quick tunnels](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) (same problem), ngrok's free tier includes **one static subdomain per account** that never changes, at no cost.
 
-1. Create a free account at [ngrok.com](https://ngrok.com). On Ubuntu install the CLI with `sudo snap install ngrok`. On macOS or another platform, use ngrok's official [download instructions](https://ngrok.com/download).
+1. Create a free account at [ngrok.com](https://ngrok.com). On macOS install it with `brew install ngrok/ngrok/ngrok`; on Ubuntu use `sudo snap install ngrok`. Other Linux distributions can use ngrok's official [download instructions](https://ngrok.com/download).
 2. Open the [ngrok authtoken page](https://dashboard.ngrok.com/get-started/your-authtoken), copy your token, and run:
 
    ```bash
@@ -248,7 +262,7 @@ Auth0 OAuth needs a stable HTTPS URL, but you don't need to own a domain to get 
    ngrok http --url=your-name.ngrok-free.dev 8765
    ```
 
-   **Both processes must remain running.** Closing either one takes the public endpoint offline. The wizard can optionally print Linux systemd-user or macOS LaunchAgent commands that start both automatically.
+   **Both processes must remain running.** Closing either one takes the public endpoint offline. The wizard can create `uhm-enable-autostart.sh`, which installs Linux systemd-user services or macOS LaunchAgents for both processes.
 6. Set `MCP_BASE_URL=https://your-name.ngrok-free.dev` in `.env` (keep `HOST=127.0.0.1`; ngrok forwards to the local port while the server listens only on loopback).
 7. In Auth0, set the application's callback URL to `https://your-name.ngrok-free.dev/auth/callback`; set web origins and logout URLs to `https://your-name.ngrok-free.dev` (see [Auth0 setup](#auth0-setup)).
 
@@ -371,6 +385,23 @@ cp examples/com.user.mcpmanager.plist ~/Library/LaunchAgents/
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.user.mcpmanager.plist
 launchctl kickstart -k gui/$(id -u)/com.user.mcpmanager
 ```
+
+### macOS permissions (do this before going remote)
+
+macOS ties Full Disk Access, Automation and similar permissions to the exact
+binary path making the request, not to the script — and grants them only
+through an interactive System Settings click, never via script or CLI (this
+is intentional on Apple's part). Since this server is meant to be driven
+remotely, nobody may be there to click an "Allow" dialog when one appears.
+
+`uhm-setup` prints a one-time checklist for this (and can open the right
+System Settings pane for you) whenever it detects macOS and a remote setup.
+The short version: find the exact path the server runs as (the wizard prints
+it, or run `which universal-host-manager-mcp` inside the same environment),
+grant it Full Disk Access once in **System Settings > Privacy & Security >
+Full Disk Access**, and keep launching the server from that same
+installation — a new venv, Python upgrade or reinstall elsewhere is a new
+path to macOS and needs the grant again.
 
 ## Configuration
 
