@@ -24,3 +24,13 @@ def test_write_env_backs_up_existing_file(tmp_path):
     assert "NEW=2" in env_path.read_text()
     backup_mode = stat.S_IMODE(backup.stat().st_mode)
     assert backup_mode == 0o600, "yedeklenen dosya da (sir icerebilecegi icin) 600 olmali"
+
+
+def test_write_env_rejects_values_containing_newline(tmp_path):
+    import pytest
+    from universal_host_manager_mcp.setup_wizard import write_env
+
+    env_path = tmp_path / ".env"
+    with pytest.raises(ValueError, match="newline"):
+        write_env(env_path, {"AUTH0_CLIENT_SECRET": "line1\nEVIL_KEY=injected"})
+    assert not env_path.exists()

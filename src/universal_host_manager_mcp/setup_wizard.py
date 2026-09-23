@@ -628,6 +628,12 @@ def _write_autostart_script(env_path: Path, network: NetworkConfig, hostname: st
 
 
 def write_env(path: Path, values: dict[str, str]) -> None:
+    # A pasted secret or hostname can occasionally carry a stray newline
+    # (e.g. a multi-line clipboard paste); writing that verbatim would
+    # inject an extra, unintended KEY=VALUE line into .env.
+    for key, value in values.items():
+        if "\n" in value or "\r" in value:
+            raise ValueError(f"{key} contains a newline; .env values cannot span multiple lines.")
     if path.exists():
         backup = path.with_suffix(path.suffix + ".bak")
         shutil.copy2(path, backup)
@@ -1006,7 +1012,12 @@ def main() -> None:
     if auth0:
         values.update(auth0)
     env_path = config_dir / ".env"
-    write_env(env_path, values)
+    try:
+        write_env(env_path, values)
+    except ValueError as exc:
+        console.print(f"\n[red]Could not write .env: {exc}[/red]")
+        console.print("[yellow]No configuration was changed. Run uhm-setup again when ready.[/yellow]")
+        return
     _show_summary(env_path, workspace, network, auth_configured=auth0 is not None)
     if sys.platform == "darwin" and network.remote:
         console.print(Panel.fit(
