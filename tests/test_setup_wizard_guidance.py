@@ -310,7 +310,11 @@ def test_autostart_script_is_executable_and_summary_uses_one_command(tmp_path, m
     )
     path = setup_wizard._write_autostart_script(tmp_path / ".env", network, "demo.ngrok-free.dev")
     assert path.name == "uhm-enable-autostart.sh"
-    assert path.stat().st_mode & 0o100
+    if os.name == "posix":
+        # chmod +x (0o100) is a POSIX-only concept; this function generates
+        # a Linux systemd autostart script specifically (autostart_target=
+        # "linux"), so there's no equivalent to check on Windows.
+        assert path.stat().st_mode & 0o100
     contents = path.read_text()
     assert contents.startswith("#!/bin/sh")
     assert "universal-host-manager-ngrok.service" in contents
