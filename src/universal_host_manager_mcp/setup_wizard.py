@@ -272,16 +272,22 @@ def _ask_autostart_target(tunnel_name: str) -> Optional[str]:
         default=False,
     ):
         return None
-    console.print("The wizard will create uhm-enable-autostart.sh; review it, then run one command after setup.")
+    console.print("The wizard will create an autostart installer script; review it, then run one command after setup.")
     console.print("  [bold]1[/bold] Linux server (systemd user services)")
     console.print("  [bold]2[/bold] macOS (LaunchAgents)")
-    default_target = "1" if sys.platform.startswith("linux") else "2"
+    console.print("  [bold]3[/bold] Windows (Task Scheduler)")
+    if sys.platform.startswith("linux"):
+        default_target = "1"
+    elif sys.platform == "win32":
+        default_target = "3"
+    else:
+        default_target = "2"
     target_choice = Prompt.ask(
         "Which device will run the services?",
-        choices=["1", "2"],
+        choices=["1", "2", "3"],
         default=default_target,
     )
-    return "linux" if target_choice == "1" else "macos"
+    return {"1": "linux", "2": "macos", "3": "windows"}[target_choice]
 
 
 def _ngrok_follow_up(hostname: str, port: int) -> tuple[str, ...]:
@@ -302,7 +308,28 @@ def _cloudflare_autostart_steps(
     server_command: str,
 ) -> tuple[str, ...]:
     config_path = str(config_dir)
-    if target == "linux":
+    if target == "windows":
+        script = f"""$ErrorActionPreference = "Stop"
+# Create and enable both scheduled tasks on Windows.
+$cloudflaredBin = (Get-Command cloudflared -ErrorAction Stop).Source
+
+$serverAction = New-ScheduledTaskAction -Execute '{server_command}' -WorkingDirectory '{config_path}'
+$serverTrigger = New-ScheduledTaskTrigger -AtLogOn
+$serverSettings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
+Unregister-ScheduledTask -TaskName "UniversalHostManagerMCP" -Confirm:$false -ErrorAction SilentlyContinue
+Register-ScheduledTask -TaskName "UniversalHostManagerMCP" -Action $serverAction -Trigger $serverTrigger -Settings $serverSettings | Out-Null
+
+$tunnelAction = New-ScheduledTaskAction -Execute $cloudflaredBin -Argument "tunnel run universal-host-manager-mcp"
+$tunnelTrigger = New-ScheduledTaskTrigger -AtLogOn
+$tunnelSettings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
+Unregister-ScheduledTask -TaskName "UniversalHostManagerCloudflared" -Confirm:$false -ErrorAction SilentlyContinue
+Register-ScheduledTask -TaskName "UniversalHostManagerCloudflared" -Action $tunnelAction -Trigger $tunnelTrigger -Settings $tunnelSettings | Out-Null
+
+Start-ScheduledTask -TaskName "UniversalHostManagerMCP"
+Start-ScheduledTask -TaskName "UniversalHostManagerCloudflared"
+Get-ScheduledTaskInfo -TaskName "UniversalHostManagerMCP"
+Get-ScheduledTaskInfo -TaskName 'UniversalHostManagerCloudflared'"""
+    elif target == "linux":
         script = f"""#!/bin/sh\nset -eu\n# Create and enable both services on Linux.
 CLOUDFLARED_BIN="$(command -v cloudflared)"
 mkdir -p "$HOME/.config/systemd/user"
@@ -384,7 +411,28 @@ def _remote_autostart_steps(
     server_command: str,
 ) -> tuple[str, ...]:
     config_path = str(config_dir)
-    if target == "linux":
+    if target == "windows":
+        script = f"""$ErrorActionPreference = "Stop"
+# Run after saving the ngrok authtoken; create both scheduled tasks on Windows.
+$ngrokBin = (Get-Command ngrok -ErrorAction Stop).Source
+
+$serverAction = New-ScheduledTaskAction -Execute '{server_command}' -WorkingDirectory '{config_path}'
+$serverTrigger = New-ScheduledTaskTrigger -AtLogOn
+$serverSettings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
+Unregister-ScheduledTask -TaskName "UniversalHostManagerMCP" -Confirm:$false -ErrorAction SilentlyContinue
+Register-ScheduledTask -TaskName "UniversalHostManagerMCP" -Action $serverAction -Trigger $serverTrigger -Settings $serverSettings | Out-Null
+
+$tunnelAction = New-ScheduledTaskAction -Execute $ngrokBin -Argument "http --url={hostname} {port}"
+$tunnelTrigger = New-ScheduledTaskTrigger -AtLogOn
+$tunnelSettings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
+Unregister-ScheduledTask -TaskName "UniversalHostManagerNgrok" -Confirm:$false -ErrorAction SilentlyContinue
+Register-ScheduledTask -TaskName "UniversalHostManagerNgrok" -Action $tunnelAction -Trigger $tunnelTrigger -Settings $tunnelSettings | Out-Null
+
+Start-ScheduledTask -TaskName "UniversalHostManagerMCP"
+Start-ScheduledTask -TaskName "UniversalHostManagerNgrok"
+Get-ScheduledTaskInfo -TaskName "UniversalHostManagerMCP"
+Get-ScheduledTaskInfo -TaskName 'UniversalHostManagerNgrok'"""
+    elif target == "linux":
         script = f"""#!/bin/sh\nset -eu\n# Run after saving the ngrok authtoken; create both Linux services.
 NGROK_BIN="$(command -v ngrok)"
 mkdir -p "$HOME/.config/systemd/user"
@@ -621,9 +669,15 @@ def _write_autostart_script(env_path: Path, network: NetworkConfig, hostname: st
             hostname, network.port, network.autostart_target or "linux",
             env_path.parent, _server_command(),
         )
-    path = env_path.parent / "uhm-enable-autostart.sh"
+    target = network.autostart_target or "linux"
+    filename = "uhm-enable-autostart.ps1" if target == "windows" else "uhm-enable-autostart.sh"
+    path = env_path.parent / filename
     path.write_text("\n".join(steps).rstrip() + "\n", encoding="utf-8")
-    os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+    if target != "windows":
+        # chmod +x has no meaning for a .ps1 file on Windows (there is no
+        # POSIX executable bit there); PowerShell's own execution policy
+        # governs whether a script runs, not a file permission.
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
     return path
 
 
@@ -643,9 +697,25 @@ def write_env(path: Path, values: dict[str, str]) -> None:
     os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
 
 
+def _server_binary_name(os_name: str = os.name) -> str:
+    """The console-script filename next to the interpreter for the given OS.
+
+    A separate, pure function (no filesystem/pathlib access) so the
+    Windows-vs-POSIX naming choice is directly unit-testable everywhere.
+    pathlib.Path itself is bound to the REAL running OS (Path() constructs
+    a WindowsPath only when Python is actually running on Windows), so
+    monkeypatching os.name alone cannot be used to test the filesystem-
+    touching parts of _server_command on a POSIX CI runner.
+    """
+    return "universal-host-manager-mcp.exe" if os_name != "posix" else "universal-host-manager-mcp"
+
+
 def _server_command() -> str:
-    candidate = Path(sys.executable).parent / "universal-host-manager-mcp"
-    return str(candidate) if candidate.exists() else (shutil.which("universal-host-manager-mcp") or "universal-host-manager-mcp")
+    candidate = Path(sys.executable).parent / _server_binary_name()
+    if candidate.exists():
+        return str(candidate)
+    found = shutil.which("universal-host-manager-mcp")
+    return found if found else "universal-host-manager-mcp"
 
 
 def _macos_permission_steps(server_path: str) -> tuple[str, ...]:

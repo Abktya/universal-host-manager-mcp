@@ -458,3 +458,60 @@ def test_readiness_runs_only_selected_capabilities(tmp_path, monkeypatch):
         tmp_path, "/venv/bin/universal-host-manager-mcp"
     ) is True
     assert captured == [("Workspace files", True, "ok")]
+
+
+def test_server_binary_name_uses_exe_suffix_on_windows():
+    assert setup_wizard._server_binary_name("nt") == "universal-host-manager-mcp.exe"
+    assert setup_wizard._server_binary_name("posix") == "universal-host-manager-mcp"
+
+
+def test_server_command_finds_console_script_next_to_interpreter(tmp_path, monkeypatch):
+    # _server_command's own OS's Path/exists() behaviour (portable pathlib
+    # usage); the Windows-specific .exe-suffix CHOICE is unit-tested above
+    # in isolation, since faking a foreign OS's Path class does not work
+    # (pathlib.Path is bound to the really-running OS).
+    fake_bin_dir = tmp_path / "bin"
+    fake_bin_dir.mkdir()
+    fake_python = fake_bin_dir / "python"
+    fake_python.write_text("")
+    fake_server = fake_bin_dir / setup_wizard._server_binary_name()
+    fake_server.write_text("")
+
+    monkeypatch.setattr(setup_wizard.sys, "executable", str(fake_python))
+
+    assert setup_wizard._server_command() == str(fake_server)
+
+
+def test_windows_autostart_script_is_ps1_and_registers_scheduled_tasks(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        setup_wizard, "_server_command",
+        lambda: r"C:\venv\Scripts\universal-host-manager-mcp.exe",
+    )
+    network = setup_wizard.NetworkConfig(
+        "ngrok static domain", "https://demo.ngrok-free.dev", 8700, True,
+        autostart_target="windows",
+    )
+    path = setup_wizard._write_autostart_script(tmp_path / ".env", network, "demo.ngrok-free.dev")
+    assert path.name == "uhm-enable-autostart.ps1"
+    contents = path.read_text()
+    assert "Register-ScheduledTask" in contents
+    assert "UniversalHostManagerMCP" in contents
+    assert "UniversalHostManagerNgrok" in contents
+    assert "ngrok" in contents.lower()
+
+
+def test_windows_cloudflare_autostart_script_registers_scheduled_tasks(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        setup_wizard, "_server_command",
+        lambda: r"C:\venv\Scripts\universal-host-manager-mcp.exe",
+    )
+    network = setup_wizard.NetworkConfig(
+        "Cloudflare Tunnel", "https://mcp.example.com", 8700, True,
+        autostart_target="windows",
+    )
+    path = setup_wizard._write_autostart_script(tmp_path / ".env", network, "mcp.example.com")
+    assert path.name == "uhm-enable-autostart.ps1"
+    contents = path.read_text()
+    assert "Register-ScheduledTask" in contents
+    assert "UniversalHostManagerCloudflared" in contents
+    assert "cloudflared" in contents.lower()
