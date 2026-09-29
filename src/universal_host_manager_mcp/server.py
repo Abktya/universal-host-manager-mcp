@@ -140,33 +140,57 @@ def _validate_path(target_path: str) -> Path:
     return resolved
 
 
+def _kill_process_tree(process: subprocess.Popen) -> None:
+    """Kill ``process`` and every child it spawned (a background job, a
+    piped command, ...), not just the immediate shell.
+
+    POSIX: the process was started in its own session (see ``_run``), so
+    ``os.killpg`` reaches the whole group. Windows has no process-group or
+    SIGKILL concept; ``os.killpg``/``signal.SIGKILL`` do not exist there at
+    all. The equivalent there is ``taskkill /T`` (kill the process tree)
+    ``/F`` (force) against the process it was started in its own group for
+    (see ``_run``'s ``CREATE_NEW_PROCESS_GROUP``).
+    """
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    else:
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+            capture_output=True,
+        )
+
+
 def _run(command: str, timeout: int = DEFAULT_CMD_TIMEOUT) -> str:
-    """Run ``command`` in a shell, killing the whole process group on timeout.
+    """Run ``command`` in a shell, killing the whole process tree on timeout.
 
     ``subprocess.run(..., shell=True)`` only terminates the immediate shell
     process on timeout; any children it spawned (background jobs, piped
     processes, ``nohup``'d commands, etc.) are left running. Starting the
-    shell in its own session (``start_new_session=True``) lets us send the
-    kill signal to the whole process group via ``os.killpg`` instead.
+    shell in its own session/process group (POSIX: ``start_new_session``;
+    Windows: ``CREATE_NEW_PROCESS_GROUP``) lets ``_kill_process_tree`` reach
+    every descendant instead of just the shell itself.
     """
     timeout = max(1, min(timeout, MAX_CMD_TIMEOUT))
-    process = subprocess.Popen(
-        command,
+    popen_kwargs: dict = dict(
         shell=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         cwd=WORKSPACE_ROOT,
         errors="replace",
-        start_new_session=True,  # own process group -> can kill children too
     )
+    if os.name == "posix":
+        popen_kwargs["start_new_session"] = True
+    else:
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    process = subprocess.Popen(command, **popen_kwargs)
     try:
         stdout, stderr = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        _kill_process_tree(process)
         stdout, stderr = process.communicate()
         return _truncate(
             f"[ERROR] Command timed out after {timeout}s and was killed "
@@ -174,10 +198,7 @@ def _run(command: str, timeout: int = DEFAULT_CMD_TIMEOUT) -> str:
             f"--- partial output ---\n{(stdout + stderr).strip() or '(none)'}"
         )
     except Exception as exc:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        _kill_process_tree(process)
         logger.exception("Command execution failed")
         return f"[ERROR] Execution failed: {type(exc).__name__}: {exc}"
 
@@ -264,15 +285,33 @@ def list_dir(path: str = ".") -> str:
 @mcp.tool()
 @safe_tool
 def system_metrics() -> str:
-    """Return disk, memory and top-process information for Linux or macOS."""
+    """Return disk, memory and top-process information for Linux, macOS or Windows."""
     current_os = platform.system().lower()
-    disk = _run("df -h .")
     if current_os == "darwin":
+        disk = _run("df -h .")
         memory = _run("vm_stat | head -10")
         processes = _run("ps -A -o %cpu,%mem,comm | sort -nr | head -n 10")
     elif current_os == "linux":
+        disk = _run("df -h .")
         memory = _run("free -h")
         processes = _run("ps aux --sort=-%mem | head -15")
+    elif current_os == "windows":
+        # df/free/ps do not exist on Windows; PowerShell cmdlets are the
+        # closest built-in equivalent and need no extra dependency.
+        disk = _run(
+            "powershell -NoProfile -Command "
+            "\"Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize\""
+        )
+        memory = _run(
+            "powershell -NoProfile -Command "
+            "\"Get-CimInstance Win32_OperatingSystem | "
+            "Select-Object TotalVisibleMemorySize,FreePhysicalMemory | Format-List\""
+        )
+        processes = _run(
+            "powershell -NoProfile -Command "
+            "\"Get-Process | Sort-Object CPU -Descending | "
+            "Select-Object -First 10 Name,CPU,WorkingSet | Format-Table -AutoSize\""
+        )
     else:
         return f"[ERROR] Unsupported operating system: {platform.system()}"
 
