@@ -260,7 +260,7 @@ def test_skipped_remote_auth_can_exit_without_changing_existing_env(tmp_path, mo
 
 def test_server_command_prefers_active_python_environment(tmp_path, monkeypatch):
     executable = tmp_path / "bin" / "python"
-    command = executable.parent / "universal-host-manager-mcp"
+    command = executable.parent / setup_wizard._server_binary_name()
     command.parent.mkdir()
     command.touch()
     monkeypatch.setattr(setup_wizard.sys, "executable", str(executable))
