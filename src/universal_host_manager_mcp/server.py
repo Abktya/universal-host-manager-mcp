@@ -65,6 +65,29 @@ AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID")
 AUTH0_CLIENT_SECRET = os.getenv("AUTH0_CLIENT_SECRET")
 AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
 
+DEFAULT_CLIENT_REDIRECT_URIS = (
+    "https://claude.ai/api/mcp/auth_callback",
+    "https://claude.com/api/mcp/auth_callback",
+    "https://chatgpt.com/connector/oauth/*",
+    "https://chatgpt.com/connector_platform_oauth_redirect",
+    "https://antigravity.google/oauth-callback",
+    "https://app.mcptoai.com/api/mcp/oauth/callback",
+    "http://localhost:*",
+    "http://127.0.0.1:*",
+)
+
+
+def _allowed_client_redirect_uris() -> list[str]:
+    """Return safe defaults plus operator-configured MCP client callbacks.
+
+    UHM_ALLOWED_CLIENT_REDIRECT_URIS is a comma/newline-separated list. This
+    keeps UHM provider-agnostic without disabling OAuth redirect validation.
+    """
+    configured = os.getenv("UHM_ALLOWED_CLIENT_REDIRECT_URIS", "")
+    extras = [item.strip() for chunk in configured.splitlines() for item in chunk.split(",") if item.strip()]
+    return list(dict.fromkeys((*DEFAULT_CLIENT_REDIRECT_URIS, *extras)))
+
+
 auth_values = [AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET, AUTH0_AUDIENCE]
 if all(auth_values):
     auth = Auth0Provider(
@@ -73,15 +96,7 @@ if all(auth_values):
         client_secret=AUTH0_CLIENT_SECRET,
         audience=AUTH0_AUDIENCE,
         base_url=BASE_URL,
-        allowed_client_redirect_uris=[
-            "https://claude.ai/api/mcp/auth_callback",
-            "https://claude.com/api/mcp/auth_callback",
-            "https://chatgpt.com/connector/oauth/*",
-            "https://chatgpt.com/connector_platform_oauth_redirect",
-            "https://antigravity.google/oauth-callback",
-            "http://localhost:*",
-            "http://127.0.0.1:*",
-        ],
+        allowed_client_redirect_uris=_allowed_client_redirect_uris(),
     )
 elif any(auth_values):
     raise RuntimeError(
